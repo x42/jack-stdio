@@ -263,13 +263,13 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 
 void catchsig (int sig) {
 #ifndef _WIN32
-  signal(SIGHUP, catchsig); /* reset signal */
-  signal(SIGINT, catchsig);                                                                                                                    
+	signal(SIGHUP, catchsig); /* reset signal */
+	signal(SIGINT, catchsig);                                                                                                                    
 #endif
-  if (!want_quiet)
-    fprintf(stdout,"\n CAUGHT SIGNAL - shutting down.\n");
-  run=0;
-  /* signal writer thread */
+	if (!want_quiet)
+		fprintf(stdout,"\n CAUGHT SIGNAL - shutting down.\n");
+	run=0;
+	/* signal writer thread */
 	pthread_mutex_lock(&io_thread_lock);
 	pthread_cond_signal(&data_ready);
 	pthread_mutex_unlock(&io_thread_lock);
@@ -278,11 +278,22 @@ void catchsig (int sig) {
 
 static void usage (const char *name, int status) {
 	fprintf(status?stderr:stdout, 
-		"usage: %s "
-		"[ -d seconds ] [ -b bitdepth ] [ -B bufsize ]"
-		"port1 [ port2 ... ]\n"
-		"\n "
-		"", name);
+		"usage: %s [ OPTIONS ] port1 [ port2 ... ]\n", name);
+	fprintf(status?stderr:stdout, 
+		"jack-stdout captures audio-data from JACK and writes it to standard-output.\n");
+	fprintf(status?stderr:stdout, 
+	  "OPTIONS:\n"
+	  " -h, --help                print this message\n"
+	  " -q, --quiet              inhibit usual output\n"
+	  " -b, --bitdepth {bits}    choose integer bit depth: 16, 24 (default: 16)\n"
+	  " -d, --duration {sec}     terminate after given time, <1: unlimited (default:0)\n"
+	  " -e, --encoding {format}  set output format: (default: signed)\n"
+		"                          signed-integer, unsigned-integer, float\n"
+	  " -S, --bufsize {samples}  set buffer size (default: 64k)\n"
+	  " -L, --little-endian      write little-endian integers or\n"
+		"                          native-byte-order floats (default)\n"
+	  " -B, --big-endian         write big-endian integers or swapped-order floats\n"
+		);
 	exit(status);
 }
 
@@ -298,14 +309,16 @@ int main (int argc, char **argv) {
 	thread_info.duration = 0;
 	thread_info.format = 0;
 
-	const char *optstring = "d:f:b:B:h";
+	const char *optstring = "d:e:b:S:BLhq";
 	struct option long_options[] = {
 		{ "help", 0, 0, 'h' },
 		{ "quiet", 0, 0, 'q' },
 		{ "duration", 1, 0, 'd' },
-		{ "file", 1, 0, 'f' },
+		{ "encoding", 1, 0, 'e' },
+		{ "little-endian", 0, 0, 'L' },
+		{ "big-endian", 0, 0, 'B' },
 		{ "bitdepth", 1, 0, 'b' },
-		{ "bufsize", 1, 0, 'B' },
+		{ "bufsize", 1, 0, 'S' },
 		{ 0, 0, 0, 0 }
 	};
 
@@ -320,12 +333,36 @@ int main (int argc, char **argv) {
 			case 'd':
 				thread_info.duration = atoi(optarg);
 				break;
-/*
-			case 'b':
-				thread_info.bitdepth = atoi(optarg);
+			case 'e':
+				thread_info.format&=~10;
+				if (!strncmp(optarg, "floating-point", strlen(optarg)))
+					thread_info.format|=8;
+				else if (!strncmp(optarg, "unsigned-integer", strlen(optarg)))
+					thread_info.format|=2;
+				else if (!strncmp(optarg, "signed-integer", strlen(optarg))) 
+					;
+				else {
+					fprintf(stderr, "invalid encoding.\n");
+					usage(argv[0], 1);
+				}
 				break;
-*/
+			case 'b':
+				thread_info.format&=~1;
+				if (atoi(optarg) == 24) 
+					thread_info.format|=1;
+				else if (atoi(optarg) != 16) {
+					fprintf(stderr, "invalid integer bit-depth. valid values: 16,i 24.\n");
+					usage(argv[0], 1);
+				}
+				break;
+			case 'L':
+				thread_info.format&=~4;
+				break;
+				thread_info.rb_size = atoi(optarg);
 			case 'B':
+				thread_info.format|=4;
+				break;
+			case 'S':
 				thread_info.rb_size = atoi(optarg);
 				break;
 			default:
@@ -361,7 +398,16 @@ int main (int argc, char **argv) {
 	}
 
 	if (!want_quiet) {
-		fprintf(stderr, "writing interleaved data - %i channels\n", thread_info.channels);
+		fprintf(stderr, "writing %i channel%s %s %sbit %s%s %s data.\n",
+			thread_info.channels, 
+			(thread_info.channels>1)?"s":"",
+			(thread_info.channels>1)?"interleaved":"",
+			(thread_info.format&8)?"32":(thread_info.format&1?"24":"16"),
+			(thread_info.format&8)?"":(thread_info.format&2?"unsigned-":"signed-"),
+			(thread_info.format&8)?"float":"integer",
+			(thread_info.format&8)?
+				(thread_info.format&4?"native-endian":"non-native-endian"):
+				(thread_info.format&4?"big-endian":"little-endian"));
 	}
 
 	jack_set_process_callback(client, process, &thread_info);
@@ -373,11 +419,11 @@ int main (int argc, char **argv) {
 
 	setup_ports(thread_info.channels, &argv[optind], &thread_info);
 
-	/* set up i/o thread: */
+	/* set up i/o thread */
 	pthread_create(&thread_info.thread_id, NULL, io_thread, &thread_info);
 #ifndef _WIN32
-  signal (SIGHUP, catchsig);                                                                                                                   
-  signal (SIGINT, catchsig);
+	signal (SIGHUP, catchsig);                                                                                                                   
+	signal (SIGINT, catchsig);
 #endif
 
 	/* all systems go - run the i/o thread */
