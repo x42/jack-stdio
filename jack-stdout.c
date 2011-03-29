@@ -283,16 +283,16 @@ static void usage (const char *name, int status) {
 		"jack-stdout captures audio-data from JACK and writes it to standard-output.\n");
 	fprintf(status?stderr:stdout, 
 	  "OPTIONS:\n"
-	  " -h, --help                print this message\n"
+	  " -h, --help               print this message\n"
 	  " -q, --quiet              inhibit usual output\n"
 	  " -b, --bitdepth {bits}    choose integer bit depth: 16, 24 (default: 16)\n"
 	  " -d, --duration {sec}     terminate after given time, <1: unlimited (default:0)\n"
 	  " -e, --encoding {format}  set output format: (default: signed)\n"
 		"                          signed-integer, unsigned-integer, float\n"
-	  " -S, --bufsize {samples}  set buffer size (default: 64k)\n"
 	  " -L, --little-endian      write little-endian integers or\n"
 		"                          native-byte-order floats (default)\n"
 	  " -B, --big-endian         write big-endian integers or swapped-order floats\n"
+	  " -S, --bufsize {samples}  set buffer size (default: 64k)\n"
 		);
 	exit(status);
 }

@@ -1,0 +1,81 @@
+.\" jack-stdout.1 written by Robin Gareus <robin@gareus.org>
+.TH JACK-STDOUT 1 "29 March 2011"
+.SH NAME
+jack-stdout \- write JACK audio data to stdout
+.SH SYNOPSIS
+.HP
+.B jack-stdout
+.RI [ OPTIONS ]
+.RI port1
+.RB [
+.RI port2
+.RB ...]
+.SH DESCRIPTION
+.LP
+\fBjack-stdout\fR captures audio from JACK and writes 
+raw data to standard-output.
+.P
+The number of given ports detemine the number of audio channels that are used.
+If more than one channel is given, the audio-sample data will be interleaved.
+.SH OPTIONS
+
+.TP
+\fB\-b\fR, \fB\-\-bitdepth \fIBITS\fR
+.RS
+Specify the bit-depth of each sample. For integer-encoding this can be
+16 or 24.  The default is 16.
+This setting is only used for integer encoding:
+Floating-point samples will always be 32 bit wide.
+.RE
+
+.TP
+\fB-d\fR, \fB--duration\fR \fISEC\fR
+.RS
+Specify the time for which jack-stdout should run in seconds.
+A value less than 1 means to run indefinitely. The default is 0.
+.RE
+
+.TP
+\fB-e\fR, \fB--encoding\fR \fIFORMAT\fR
+.RS
+Set the output format of the data: signed-integer, unsigned-integer, floating-point
+(default: signed)
+.RE
+
+.TP
+\fB-h\fR, \fB--help\fR
+.RS
+print a brief usage information
+.RE
+
+.TP
+\fB-L\fR, \fB--little-endian\fR
+.RS
+write little-endian data or native-byte-order float (this is the default)
+.RE
+
+.TP
+\fB-B\fR, \fB--big-endian\fR
+.RS
+output big-endian data or swap the byte-order of floating-point 
+.RE
+
+.TP
+\fB-q\fR, \fB--quiet\fR
+.RS
+Inhibit usual output.
+This affects information and buffer-overflow warnings but not setup-errors.
+.RE
+
+.TP
+\fB-S\fR, \fB--bufsize\fR \fISAMPLES\fR
+.RS
+Choose the internal buffer-size in samples. The default size is 65536.
+The given value will be multiplied by the number of channels and bit-depth
+to get the size of the ring-buffer.
+.RE
+
+.SH AUTHOR
+Robin Gareus <robin@gareus.org>.
+.SH SEE ALSO
+http://jackaudio.org/,
