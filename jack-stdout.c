@@ -39,6 +39,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <getopt.h>
+#include <signal.h>
 #include <math.h>
 #include <jack/jack.h>
 #include <jack/ringbuffer.h>
@@ -79,6 +80,7 @@ pthread_cond_t  data_ready = PTHREAD_COND_INITIALIZER;
 
 /* global options/status */
 int want_quiet = 0;
+int run = 1;
 long overruns = 0;
 
 void * io_thread (void *arg) {
@@ -93,7 +95,7 @@ void * io_thread (void *arg) {
 
 	int writerrors =0;
 
-	while (1) {
+	while (run) {
 		/* Write the data one frame at a time.  This is
 		 * inefficient, but makes things simpler. */
 		while (info->can_capture &&
@@ -259,6 +261,21 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 	info->can_process = 1;
 }
 
+void catchsig (int sig) {
+#ifndef _WIN32
+  signal(SIGHUP, catchsig); /* reset signal */
+  signal(SIGINT, catchsig);                                                                                                                    
+#endif
+  if (!want_quiet)
+    fprintf(stdout,"\n CAUGHT SIGNAL - shutting down.\n");
+  run=0;
+  /* signal writer thread */
+	pthread_mutex_lock(&io_thread_lock);
+	pthread_cond_signal(&data_ready);
+	pthread_mutex_unlock(&io_thread_lock);
+}
+
+
 static void usage (const char *name, int status) {
 	fprintf(status?stderr:stdout, 
 		"usage: %s "
@@ -320,7 +337,7 @@ int main (int argc, char **argv) {
 
 	/* sanity checks */
 	if (thread_info.rb_size < 16) {
-		fprintf(stderr, "Ringbuffer size needs to be at least 16 samples\n")
+		fprintf(stderr, "Ringbuffer size needs to be at least 16 samples\n");
 		usage(argv[0], 1);
 	}
 
@@ -358,6 +375,10 @@ int main (int argc, char **argv) {
 
 	/* set up i/o thread: */
 	pthread_create(&thread_info.thread_id, NULL, io_thread, &thread_info);
+#ifndef _WIN32
+  signal (SIGHUP, catchsig);                                                                                                                   
+  signal (SIGINT, catchsig);
+#endif
 
 	/* all systems go - run the i/o thread */
 	thread_info.can_capture = 1;
