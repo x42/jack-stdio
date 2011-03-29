@@ -428,7 +428,6 @@ int main (int argc, char **argv) {
 
 	/* all systems go - run the i/o thread */
 	thread_info.can_capture = 1;
-	fprintf(stderr, "starting output..\n");
 	pthread_join(thread_info.thread_id, NULL);
 
 	/* end - clean up */
