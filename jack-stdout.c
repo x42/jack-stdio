@@ -279,11 +279,12 @@ main (int argc, char *argv[])
 {
 	jack_client_t *client;
 	jack_thread_info_t thread_info;
+	jack_status_t jstat;
 
 	memset (&thread_info, 0, sizeof (thread_info));
 	thread_info.rb_size = 16384 * 4; //< make this an option
 
-	if ((client = jack_client_open ("jstdout", JackNullOption, NULL)) == 0) {
+	if ((client = jack_client_open ("jstdout", JackNoStartServer, &jstat)) == 0) {
 		fprintf (stderr, "jack server not running?\n");
 		exit (1);
 	}
