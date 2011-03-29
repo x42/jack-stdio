@@ -1,5 +1,5 @@
-jack-stdout (1.0-1) unstable; urgency=low
+jack-stdout (1.0-2) unstable; urgency=low
 
-  * Initial release
+  * version 1.0
 
  -- Robin Gareus <robin@gareus.org>  Tue, 29 Mar 2011 21:24:00 +0200

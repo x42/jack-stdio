@@ -264,7 +264,6 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 void catchsig (int sig) {
 #ifndef _WIN32
 	signal(SIGHUP, catchsig); /* reset signal */
-	signal(SIGINT, catchsig);                                                                                                                    
 #endif
 	if (!want_quiet)
 		fprintf(stdout,"\n CAUGHT SIGNAL - shutting down.\n");
@@ -398,7 +397,7 @@ int main (int argc, char **argv) {
 	}
 
 	if (!want_quiet) {
-		fprintf(stderr, "writing %i channel%s %s %sbit %s%s %s data.\n",
+		fprintf(stderr, "%i channel%s, %s %sbit %s%s %s @%iSPS.\n",
 			thread_info.channels, 
 			(thread_info.channels>1)?"s":"",
 			(thread_info.channels>1)?"interleaved":"",
@@ -407,7 +406,9 @@ int main (int argc, char **argv) {
 			(thread_info.format&8)?"float":"integer",
 			(thread_info.format&8)?
 				(thread_info.format&4?"native-endian":"non-native-endian"):
-				(thread_info.format&4?"big-endian":"little-endian"));
+				(thread_info.format&4?"big-endian":"little-endian"),
+		  jack_get_sample_rate(thread_info.client)
+				);
 	}
 
 	jack_set_process_callback(client, process, &thread_info);
@@ -423,7 +424,6 @@ int main (int argc, char **argv) {
 	pthread_create(&thread_info.thread_id, NULL, io_thread, &thread_info);
 #ifndef _WIN32
 	signal (SIGHUP, catchsig);                                                                                                                   
-	signal (SIGINT, catchsig);
 #endif
 
 	/* all systems go - run the i/o thread */
