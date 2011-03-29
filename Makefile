@@ -12,10 +12,15 @@ all: jack-stdout
 jack-stdout: jack-stdout.c
 
 install: all
-	install -m 755 jack-stdout $(DESTDIR)$(PREFIX)/bin
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 jack-stdout $(DESTDIR)$(PREFIX)/bin/
+	#install -d $(DESTDIR)$(PREFIX)/share/man/man1
+	#install -m 644 jack-stdout.1 $(DESTDIR)$(PREFIX)/share/man/man1/
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/jack-stdout
+	#rm -f $(DESTDIR)$(PREFIX)/share/man/man1/jack-stdout.1
+	-rmdir $(DESTDIR)$(PREFIX)/bin
 
 clean:
 	/bin/rm -f jack-stdout
