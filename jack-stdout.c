@@ -77,6 +77,8 @@ jack_ringbuffer_t *rb;
 pthread_mutex_t io_thread_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  data_ready = PTHREAD_COND_INITIALIZER;
 
+/* global options/status */
+int want_quiet = 0;
 long overruns = 0;
 
 void * io_thread (void *arg) {
@@ -86,8 +88,8 @@ void * io_thread (void *arg) {
 	const size_t bytes_per_frame = info->channels * SAMPLESIZE;
 	void *framebuf = malloc (bytes_per_frame);
 
-	pthread_setcanceltype (PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
-	pthread_mutex_lock (&io_thread_lock);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	pthread_mutex_lock(&io_thread_lock);
 
 	int writerrors =0;
 
@@ -98,44 +100,48 @@ void * io_thread (void *arg) {
 		       (jack_ringbuffer_read_space (rb) >= bytes_per_frame)) {
 
 			if (info->duration > 0 && total_captured >= info->duration) {
-				printf ("disk thread finished\n");
+				printf("disk thread finished\n");
 				goto done;
 			}
 
-			jack_ringbuffer_read (rb, framebuf, bytes_per_frame);
+			#if 0 /* wait (indefinitley) for write-ready */
+			fd_set fd;
+			FD_ZERO(&fd);
+			FD_SET(fileno(stdout), &fd);
+			select(fileno(stdout), &fd, NULL, NULL, NULL);
+			#endif
+
+			jack_ringbuffer_read(rb, framebuf, bytes_per_frame);
 			while (write(fileno(stdout) , framebuf, bytes_per_frame) != bytes_per_frame)
 			{
 				if (++writerrors>5) 
 				{ 
-					//TODO: push back the current frame. and resume at the correct channel
-					fprintf(stderr, "FATAL: write error.\n");
+					if (!want_quiet)
+						fprintf(stderr, "FATAL: write error.\n");
 					writerrors=0;
 					break;
 				}
 				/* retry */
-				// fprintf(stderr, "buffer not emptied: %i|%i\n", jack_ringbuffer_read_space(rb), jack_ringbuffer_write_space(rb));
+				//fprintf(stderr, "buffer not emptied: %i|%i\n", jack_ringbuffer_read_space(rb), jack_ringbuffer_write_space(rb));
 				
 				#if 0
 				/* heck this thread can just block.. */
-				int usec= 1000; // 1ms
 				fd_set fd;
-				int max_fd=fileno(stdout);
 				struct timeval tv = { 0, 0 };
-				tv.tv_sec = 0; tv.tv_usec = usec;
-
+				tv.tv_sec = 0; tv.tv_usec = 1000; // 1ms
 				FD_ZERO(&fd);
 				FD_SET(fileno(stdout), &fd);
-				select(max_fd, &fd, NULL, NULL, &tv);
+				select(fileno(stdout), &fd, NULL, NULL, &tv);
 				#endif
 			}
 			++total_captured;
 		}
-		pthread_cond_wait (&data_ready, &io_thread_lock);
+		pthread_cond_wait(&data_ready, &io_thread_lock);
 	}
 
 done:
-	pthread_mutex_unlock (&io_thread_lock);
-	free (framebuf);
+	pthread_mutex_unlock(&io_thread_lock);
+	free(framebuf);
 	return 0;
 }
 	
@@ -150,7 +156,7 @@ int process (jack_nframes_t nframes, void *arg) {
 		return 0;
 
 	for (chn = 0; chn < info->channels; ++chn)
-		in[chn] = jack_port_get_buffer (ports[chn], nframes);
+		in[chn] = jack_port_get_buffer(ports[chn], nframes);
 
 	/* queue interleaved samples to a single ringbuffer. */
 	for (i = 0; i < nframes; i++) {
@@ -184,7 +190,7 @@ int process (jack_nframes_t nframes, void *arg) {
 				} else {
 				  d = js;
 				}
-				jack_ringbuffer_write (rb, (void *) &d, SAMPLESIZE);
+				jack_ringbuffer_write(rb, (void *) &d, SAMPLESIZE);
 			} else {
 				/* 16/24 LE/BE signed/unsigned */
 				const int32_t d = (int32_t) rintf(js*FMTMLT) + FMTOFF;
@@ -199,27 +205,27 @@ int process (jack_nframes_t nframes, void *arg) {
 		}
 	}
 	/* Tell the io thread there is work to do. */ 
-	if (pthread_mutex_trylock (&io_thread_lock) == 0) {
-	    pthread_cond_signal (&data_ready);
-	    pthread_mutex_unlock (&io_thread_lock);
+	if (pthread_mutex_trylock(&io_thread_lock) == 0) {
+	    pthread_cond_signal(&data_ready);
+	    pthread_mutex_unlock(&io_thread_lock);
 	}
 
 	return 0;
 }
 
 void jack_shutdown (void *arg) {
-	fprintf (stderr, "JACK shutdown\n");
+	fprintf(stderr, "JACK shutdown\n");
 	abort();
 }
 
 void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 	unsigned int i;
-	const size_t in_size =  nports * sizeof (jack_default_audio_sample_t *);
+	const size_t in_size =  nports * sizeof(jack_default_audio_sample_t *);
 
 	/* Allocate data structures that depend on the number of ports. */
-	ports = (jack_port_t **) malloc (sizeof (jack_port_t *) * nports);
-	in = (jack_default_audio_sample_t **) malloc (in_size);
-	rb = jack_ringbuffer_create (nports * SAMPLESIZE * info->rb_size);
+	ports = (jack_port_t **) malloc(sizeof(jack_port_t *) * nports);
+	in = (jack_default_audio_sample_t **) malloc(in_size);
+	rb = jack_ringbuffer_create(nports * SAMPLESIZE * info->rb_size);
 
 	/* When JACK is running realtime, jack_activate() will have
 	 * called mlockall() to lock our pages into memory.  But, we
@@ -232,20 +238,20 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 	for (i = 0; i < nports; i++) {
 		char name[64];
 
-		sprintf (name, "input%d", i+1);
+		sprintf(name, "input%d", i+1);
 
-		if ((ports[i] = jack_port_register (info->client, name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0)) == 0) {
-			fprintf (stderr, "cannot register input port \"%s\"!\n", name);
-			jack_client_close (info->client);
-			exit (1);
+		if ((ports[i] = jack_port_register(info->client, name, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0)) == 0) {
+			fprintf(stderr, "cannot register input port \"%s\"!\n", name);
+			jack_client_close(info->client);
+			exit(1);
 		}
 	}
 
 	for (i = 0; i < nports; i++) {
-		if (jack_connect (info->client, source_names[i], jack_port_name (ports[i]))) {
-			fprintf (stderr, "cannot connect input port %s to %s\n", jack_port_name (ports[i]), source_names[i]);
-			jack_client_close (info->client);
-			exit (1);
+		if (jack_connect(info->client, source_names[i], jack_port_name(ports[i]))) {
+			fprintf(stderr, "cannot connect input port %s to %s\n", jack_port_name(ports[i]), source_names[i]);
+			jack_client_close(info->client);
+			exit(1);
 		} 
 	}
 
@@ -254,13 +260,13 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 }
 
 static void usage (const char *name, int status) {
-	fprintf (status?stderr:stdout, 
+	fprintf(status?stderr:stdout, 
 		"usage: %s "
 		"[ -d seconds ] [ -b bitdepth ] [ -B bufsize ]"
 		"port1 [ port2 ... ]\n"
 		"\n "
 		"", name);
-	exit (status);
+	exit(status);
 }
 
 int main (int argc, char **argv) {
@@ -269,7 +275,7 @@ int main (int argc, char **argv) {
 	jack_status_t jstat;
 	int c;
 
-	memset (&thread_info, 0, sizeof (thread_info));
+	memset(&thread_info, 0, sizeof(thread_info));
 	thread_info.rb_size = 16384 * 4; //< make this an option
 	thread_info.channels = 2;
 	thread_info.duration = 0;
@@ -278,6 +284,7 @@ int main (int argc, char **argv) {
 	const char *optstring = "d:f:b:B:h";
 	struct option long_options[] = {
 		{ "help", 0, 0, 'h' },
+		{ "quiet", 0, 0, 'q' },
 		{ "duration", 1, 0, 'd' },
 		{ "file", 1, 0, 'f' },
 		{ "bitdepth", 1, 0, 'b' },
@@ -285,37 +292,47 @@ int main (int argc, char **argv) {
 		{ 0, 0, 0, 0 }
 	};
 
-	while ((c = getopt_long (argc, argv, optstring, long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
 		switch (c) {
 			case 'h':
 				usage(argv[0], 0);
 				break;
+			case 'q':
+				want_quiet = 1;
+				break;
 			case 'd':
-				thread_info.duration = atoi (optarg);
+				thread_info.duration = atoi(optarg);
 				break;
 /*
 			case 'b':
-				thread_info.bitdepth = atoi (optarg);
+				thread_info.bitdepth = atoi(optarg);
 				break;
 */
 			case 'B':
-				thread_info.rb_size = atoi (optarg);
+				thread_info.rb_size = atoi(optarg);
 				break;
 			default:
-				fprintf (stderr, "invalid argument.\n");
+				fprintf(stderr, "invalid argument.\n");
 				usage(argv[0], 0);
 			break;
 		}
 	}
 
-	if (argc <= optind) {
-		fprintf (stderr, "need at least one port/audio-channel .\n");
+	/* sanity checks */
+	if (thread_info.rb_size < 16) {
+		fprintf(stderr, "Ringbuffer size needs to be at least 16 samples\n")
 		usage(argv[0], 1);
 	}
 
-	if ((client = jack_client_open ("jstdout", JackNoStartServer, &jstat)) == 0) {
-		fprintf (stderr, "Can not connect to JACK.\n");
-		exit (1);
+	if (argc <= optind) {
+		fprintf(stderr, "At least one port/audio-channel must be given.\n");
+		usage(argv[0], 1);
+	}
+
+	/* set up JACK client */
+	if ((client = jack_client_open("jstdout", JackNoStartServer, &jstat)) == 0) {
+		fprintf(stderr, "Can not connect to JACK.\n");
+		exit(1);
 	}
 
 	thread_info.client = client;
@@ -323,33 +340,35 @@ int main (int argc, char **argv) {
 	thread_info.channels = argc - optind;
 
 	if (thread_info.duration > 0) {
-		thread_info.duration *= jack_get_sample_rate (thread_info.client);
+		thread_info.duration *= jack_get_sample_rate(thread_info.client);
 	}
 
-	//fprintf(stderr, "writing interleaved data - %i channels\n", thread_info.channels);
+	if (!want_quiet) {
+		fprintf(stderr, "writing interleaved data - %i channels\n", thread_info.channels);
+	}
+
+	jack_set_process_callback(client, process, &thread_info);
+	jack_on_shutdown(client, jack_shutdown, &thread_info);
+
+	if (jack_activate(client)) {
+		fprintf(stderr, "cannot activate client");
+	}
+
+	setup_ports(thread_info.channels, &argv[optind], &thread_info);
 
 	/* set up i/o thread: */
-	pthread_create (&thread_info.thread_id, NULL, io_thread, &thread_info);
-
-	jack_set_process_callback (client, process, &thread_info);
-	jack_on_shutdown (client, jack_shutdown, &thread_info);
-
-	if (jack_activate (client)) {
-		fprintf (stderr, "cannot activate client");
-	}
-
-	setup_ports (thread_info.channels, &argv[optind], &thread_info);
+	pthread_create(&thread_info.thread_id, NULL, io_thread, &thread_info);
 
 	/* all systems go - run the i/o thread */
 	thread_info.can_capture = 1;
 	fprintf(stderr, "starting output..\n");
-	pthread_join (thread_info.thread_id, NULL);
+	pthread_join(thread_info.thread_id, NULL);
 
 	/* end - clean up */
-	if (overruns > 0) {
-		fprintf (stderr, "Note: there were %ld buffer overruns.\n", overruns);
+	if (overruns > 0 && !want_quiet) {
+		fprintf(stderr, "Note: there were %ld buffer overruns.\n", overruns);
 	}
-	jack_client_close (client);
-	jack_ringbuffer_free (rb);
+	jack_client_close(client);
+	jack_ringbuffer_free(rb);
 	return(0);
 }
