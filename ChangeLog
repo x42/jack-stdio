@@ -1,0 +1,10 @@
+2011-03-29  rgareus  <robin@gareus.org>
+	* major rewrite
+	* dynamic channel count
+	* support various formats, encoding
+	* added command-line parameters, help
+	* manual page, debian packaging
+	* v1.0
+
+2008-07-01  rgareus  <robin@gareus.org>
+	* basic version based on jack capture_client.c example
