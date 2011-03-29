@@ -1,0 +1,24 @@
+Source: jack-stdout
+Section: sound
+Priority: optional
+Maintainer: Robin Gareus <robin@gareus.org>
+Build-Depends: debhelper (>= 7.0.50~),
+ libjack-dev | libjack-jackd2-dev
+Homepage: http://rg42.org/oss/jackstdout/
+Standards-Version: 3.9.1
+
+Package: jack-stdout
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: sox
+Description: program to pipe audio-data from JACK
+ A simple command-line utility to write raw audio-data
+ from JACK to standard-output. 
+ .
+ jack-stdout supports unlimited number of channel 
+ and a variety of raw PCM encodings:
+ signed/unsigned 16/24 bit integer, floating-point,
+ little/big-endian.
+ .
+ It can be used to capture or with additional tools to 
+ live-encoding audio from JACK.
