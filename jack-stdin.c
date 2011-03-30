@@ -60,7 +60,12 @@ typedef struct _thread_info {
 	 */
 } jack_thread_info_t;
 
-#define BE(i) ((info->format&4)?((((info->format&1))?2:1)-i):i)
+#ifdef __BIG_ENDIAN__
+# define BE(i) (!(info->format&4)?((((info->format&1))?2:1)-i):i)
+#else
+# define BE(i) ((info->format&4)?((((info->format&1))?2:1)-i):i)
+#endif
+
 #define FMTMLT ((info->format&1)?8388608.0:32767.0)
 #define FMTOFF ((info->format&2)?((info->format&1)?4194304:16384):0)
 #define SAMPLESIZE ((info->format&8)?4:((info->format&1)?3:2))
@@ -94,6 +99,7 @@ void * io_thread (void *arg) {
 	pthread_mutex_lock(&io_thread_lock);
 
 	int readerror =0;
+	size_t roff = 0;
 
 	while (run && !readerror) {
 		/* Read the data one frame at a time.  This is
@@ -113,26 +119,26 @@ void * io_thread (void *arg) {
 			select(fileno(info->fd), &fd, NULL, NULL, NULL);
 			#endif
 
-			int rv = read(info->readfd, framebuf, bytes_per_frame);
+			int rv = read(info->readfd, framebuf+roff, bytes_per_frame-roff);
 
-			/* TODO: better error handling */
-			if (rv < 0) {readerror=1; break;} // Error
-			if (rv == 0) {readerror=1; break;} // EOF
-			if (rv != bytes_per_frame) {readerror=1; break;} // XXX queue ...
-			//fprintf(stderr, "read..\n");
+			if (rv < 0)  {readerror=1; break;} /* error */
+			else if (rv == 0) {readerror=1; break;} /* EOF */
+			else if (rv < bytes_per_frame) {rov=rv; continue;}
+			else roff=0;
 
 			jack_ringbuffer_write(rb, framebuf, bytes_per_frame);
 			++total_captured;
 		}
-		pthread_cond_wait(&data_ready, &io_thread_lock);
+		if (!readerror) 
+			pthread_cond_wait(&data_ready, &io_thread_lock);
 	}
 
-	fprintf(stderr, "EOF..\n");
+	//fprintf(stderr, "EOF..\n");
 
 	/* wait until all data is processed */
 	while (jack_ringbuffer_read_space(rb) > 
 			jack_get_buffer_size(info->client) * bytes_per_frame) 
-		usleep(1000);
+		usleep(10000);
 
 done:
 	pthread_mutex_unlock(&io_thread_lock);
@@ -153,25 +159,22 @@ int process (jack_nframes_t nframes, void *arg) {
 
 	const jack_nframes_t rbrs = jack_ringbuffer_read_space(rb);
 
-	/* Do nothing until we're ready to begin. */
-	if (   (!info->can_process)
-			|| (!info->can_capture)
-		     /* only dequeue samples if a whole period is avail. */
-		  || (rbrs < bytes_per_frame * nframes)
-		 ) {
+	/* Do nothing until we're ready to begin. and 
+	   only dequeue samples if a whole period is avail. */
+	if ((!info->can_capture) || (rbrs < bytes_per_frame * nframes)) {
 		/* silence */
 		for (chn = 0; chn < info->channels; ++chn) {
 			memset(out[chn], 0, nframes * sizeof(jack_default_audio_sample_t));
 		}
 		
 		/* count underruns */
-		if (info->can_process && info->can_capture && rbrs < bytes_per_frame * nframes) {
+		if (info->can_capture && rbrs < bytes_per_frame * nframes) {
 			underruns++;
 		}
 		return 0;
 	}
 
-	/* dequeue interleaved samples to a single ringbuffer. */
+	/* dequeue interleaved samples from a single ringbuffer. */
 	for (i = 0; i < nframes; i++) {
 
 		for (chn = 0; chn < info->channels; ++chn) {
@@ -182,7 +185,7 @@ int process (jack_nframes_t nframes, void *arg) {
 			const int16_t d = (twobyte[0]&0xff) + ((twobyte[1]&0xff)<<8);
 			out[chn][i] = (jack_default_audio_sample_t) (d / 32767.0);
 			//out[chn][i] = (jack_default_audio_sample_t) ( ((int16_t) twobyte) / 32767.0);
-#else /* TODO  - invert direction */
+#else 
 			jack_default_audio_sample_t js;
 			if (IS_FMT32B) {
 				/* 32 bit float */
@@ -206,32 +209,32 @@ int process (jack_nframes_t nframes, void *arg) {
 				jack_ringbuffer_read (rb, (void *) &bytes, SAMPLESIZE);
 
 				float d=0;
-				if (info->format&1) { // 24 bit
+				if (info->format&1) { /* 24 bit */
+					/* http://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence */
+
+					/* This works, but looks weird to me. if you have better code 
+					 * don't hesitate to contact me*/
 					d=
 					((int32_t) (
-					   (((int32_t)(bytes[BE(0)]))&0xff)
-					| ((((int32_t)(bytes[BE(1)]))&0xff)<<8) 
-					| ((((int32_t)(bytes[BE(2)]))&0xff)<<16)
-					|   ((int32_t)((bytes[BE(2)]&0x80 && !(info->format&2))?0xff000000:0)) /* negative -- IFF signed*/
+					  ( ((int32_t)bytes[BE(0)]&0xff)     )
+					| ( ((int32_t)bytes[BE(1)]&0xff)<<8  )
+					| ( ((int32_t)bytes[BE(2)]&0xff)<<16 )
+					/* negative -- IFF signed */
+#ifdef __BIG_ENDIAN__
+					| (int32_t)((bytes[BE(2)]&0x80 && !(info->format&2))?0xff:0)
+#else
+					| (int32_t)((bytes[BE(2)]&0x80 && !(info->format&2))?0xff000000:0)
+#endif
 					));
-				} else {
+				} else { /* 16 bit */
 					d=
 					((int16_t) (
-					   (((int16_t)(bytes[BE(0)]))&0xff)
-					| ((((int16_t)(bytes[BE(1)]))&0xff)<<8) 
+					  ( ((int16_t)bytes[BE(0)]&0xff)    )
+					| ( ((int16_t)bytes[BE(1)]&0xff)<<8 ) 
 					));
 				}
 
 				out[chn][i] = (jack_default_audio_sample_t) ((d-FMTOFF) / FMTMLT);
-/*
-				const int32_t d = (int32_t) rintf(js*FMTMLT) + FMTOFF;
-				char bytes[3];
-				bytes[BE(0)] = (unsigned char) (d&0xff);
-				bytes[BE(1)] = (unsigned char) (((d&0xff00)>>8)&0xff);
-				if (info->format&1)
-					bytes[BE(2)] = (unsigned char) (((d&0xff0000)>>16)&0xff);
-				jack_ringbuffer_write (rb, (void *) &bytes, SAMPLESIZE);
-*/
 			}
 #endif
 		}
@@ -300,7 +303,7 @@ void catchsig (int sig) {
 	if (!want_quiet)
 		fprintf(stderr,"\n CAUGHT SIGNAL - shutting down.\n");
 	run=0;
-	/* signal writer thread */
+	/* signal reader thread */
 	pthread_mutex_lock(&io_thread_lock);
 	pthread_cond_signal(&data_ready);
 	pthread_mutex_unlock(&io_thread_lock);
@@ -320,6 +323,7 @@ static void usage (const char *name, int status) {
 	  " -d, --duration {sec}     terminate after given time, <1: unlimited (default:0)\n"
 	  " -e, --encoding {format}  set output format: (default: signed)\n"
 		"                          signed-integer, unsigned-integer, float\n"
+	  " -f, --file {filename}    read data from file instead of stdin\n"
 	  " -L, --little-endian      write little-endian integers or\n"
 		"                          native-byte-order floats (default)\n"
 	  " -B, --big-endian         write big-endian integers or swapped-order floats\n"
@@ -480,8 +484,8 @@ int main (int argc, char **argv) {
 
 	/* end - clean up */
 
-	/* close readfd if it is not stdin*/
 	if (infn) {
+		/* close readfd if it is not stdin*/
 	  close(thread_info.readfd);
 		free(infn);
 	}
