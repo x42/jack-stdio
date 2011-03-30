@@ -1,0 +1,107 @@
+.\" jack-stdin.1 written by Robin Gareus <robin@gareus.org>
+.TH JACK-STDIN 1 "30 March 2011"
+.SH NAME
+jack-stdin \- write JACK audio data to stdin
+.SH SYNOPSIS
+.HP
+.B jack-stdin
+.RI [ OPTIONS ]
+.RI port1
+.RB [
+.RI port2
+.RB ...]
+.SH DESCRIPTION
+.LP
+\fBjack-stdin\fR reads raw audio data from standard-input and writes it to a
+JACK audio port.
+.P
+The number of given ports detemine the number of audio channels that are used.
+If more than one channel is given, the input audio-sample data needs to be
+interleaved.
+.SH OPTIONS
+
+.TP
+\fB\-b\fR, \fB\-\-bitdepth \fIBITS\fR
+.RS
+Specify the bit-depth of each sample. For integer-encoding this can be
+16 or 24.  The default is 16.
+This setting is only used for integer encoding:
+Floating-point samples will always be 32 bit wide.
+.RE
+
+.TP
+\fB-d\fR, \fB--duration\fR \fISEC\fR
+.RS
+Specify the time for which jack-stdin should run in seconds.
+A value less than 1 means to run indefinitely. The default is 0 
+which reads until end-of-file.
+.RE
+
+.TP
+\fB-e\fR, \fB--encoding\fR \fIFORMAT\fR
+.RS
+Set the input format of the data: signed-integer, unsigned-integer, floating-point
+(default: signed)
+.RE
+
+.TP
+\fB-f\fR, \fB--file\fR \fIFILENAME\fR
+.RS
+Read data from given file instead of standard-input.
+.RE
+
+.TP
+\fB-h\fR, \fB--help\fR
+.RS
+Print a brief usage information
+.RE
+
+.TP
+\fB-p\fR, \fB--prebuffer\fR \fIPERCENT\fR
+.RS
+Pre-fill the buffer before starting audio output to JACK (default 25.0%).
+.RE
+
+.TP
+\fB-L\fR, \fB--little-endian\fR
+.RS
+The input-data is in little-endian byte-order or native-byte-order float (this is the default)
+.RE
+
+.TP
+\fB-B\fR, \fB--big-endian\fR
+.RS
+Interpret input audio data in big-endian byte-order or swap the byte-order of floating-point.
+.RE
+
+.TP
+\fB-q\fR, \fB--quiet\fR
+.RS
+Inhibit usual output.
+This affects information and buffer-overflow warnings but not setup-errors.
+.RE
+
+.TP
+\fB-S\fR, \fB--bufsize\fR \fISAMPLES\fR
+.RS
+Choose the internal buffer-size in samples. The default size is 65536.
+The given value will be multiplied by the number of channels and bit-depth
+to get the size of the ring-buffer.
+Note: the buffersize must be larger than JACK's period size.
+.RE
+
+.SH EXAMPLES
+.nf
+  ./jack-stdout vlc_31994:out_1 vlc_31994:out_2 \
+	| sox -t raw -r 48k -e signed -b 16 -c 2 - \
+	      -t raw -r 48k -e signed -b 16 -c 2 - \
+	   tremolo 5 100 \
+	| ./jack-stdin system:playback_1 system:playback_2
+
+  cat /dev/dsp \
+	| ./jack-stdin system:playback_1 system:playback_2
+.fi
+.SH AUTHOR
+Robin Gareus <robin@gareus.org>.
+.SH SEE ALSO
+http://jackaudio.org/,

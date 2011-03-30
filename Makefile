@@ -19,13 +19,13 @@ install: all
 	install -m 755 jack-stdin  $(DESTDIR)$(PREFIX)/bin/
 	install -d $(DESTDIR)$(PREFIX)/share/man/man1
 	install -m 644 jack-stdout.1 $(DESTDIR)$(PREFIX)/share/man/man1/
-	#install -m 644 jack-stdin.1 $(DESTDIR)$(PREFIX)/share/man/man1/
+	install -m 644 jack-stdin.1 $(DESTDIR)$(PREFIX)/share/man/man1/
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/jack-stdout
 	rm -f $(DESTDIR)$(PREFIX)/bin/jack-stdin
 	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/jack-stdout.1
-	#rm -f $(DESTDIR)$(PREFIX)/share/man/man1/jack-stdin.1
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/jack-stdin.1
 	-rmdir $(DESTDIR)$(PREFIX)/bin
 	-rmdir $(DESTDIR)$(PREFIX)/share/man/man1
 
