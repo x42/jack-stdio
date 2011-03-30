@@ -49,6 +49,7 @@ typedef struct _thread_info {
 	unsigned int channels;
 	volatile int can_capture;
 	volatile int can_process;
+	float prebuffer;
 	int readfd;
 	int format; 
 	/**format:
@@ -71,6 +72,8 @@ typedef struct _thread_info {
 #define SAMPLESIZE ((info->format&8)?4:((info->format&1)?3:2))
 
 #define IS_FMT32B (info->format&8)
+#define IS_FMT24B (info->format&1)
+#define IS_SIGNED (!(info->format&2))
 #define IS_BIGEND (info->format&4)
 
 /* JACK data */
@@ -123,7 +126,7 @@ void * io_thread (void *arg) {
 
 			if (rv < 0)  {readerror=1; break;} /* error */
 			else if (rv == 0) {readerror=1; break;} /* EOF */
-			else if (rv < bytes_per_frame) {rov=rv; continue;}
+			else if (rv < bytes_per_frame) {roff=rv; continue;}
 			else roff=0;
 
 			jack_ringbuffer_write(rb, framebuf, bytes_per_frame);
@@ -133,10 +136,11 @@ void * io_thread (void *arg) {
 			pthread_cond_wait(&data_ready, &io_thread_lock);
 	}
 
-	//fprintf(stderr, "EOF..\n");
+	fprintf(stderr, "jack-stdin: EOF..\n"); /* DEBUG */
 
 	/* wait until all data is processed */
-	while (jack_ringbuffer_read_space(rb) > 
+	while (info->prebuffer == 0 && 
+			jack_ringbuffer_read_space(rb) > 
 			jack_get_buffer_size(info->client) * bytes_per_frame) 
 		usleep(10000);
 
@@ -153,11 +157,19 @@ int process (jack_nframes_t nframes, void *arg) {
 	const size_t bytes_per_frame = info->channels * SAMPLESIZE;
 
 	if ((!info->can_process)) return 0;
+	const jack_nframes_t rbrs = jack_ringbuffer_read_space(rb);
+
+#if 1 /* initial pre-buffer.. */
+  if (rbrs < ceil(info->rb_size * info->prebuffer / 100.0)) {
+		// fprintf(stderr,"waiting..\n"); /* DEBUG */
+		return 0;
+	}
+	info->prebuffer=0;
+#endif
 
 	for (chn = 0; chn < info->channels; ++chn)
 		out[chn] = jack_port_get_buffer(ports[chn], nframes);
 
-	const jack_nframes_t rbrs = jack_ringbuffer_read_space(rb);
 
 	/* Do nothing until we're ready to begin. and 
 	   only dequeue samples if a whole period is avail. */
@@ -170,6 +182,7 @@ int process (jack_nframes_t nframes, void *arg) {
 		/* count underruns */
 		if (info->can_capture && rbrs < bytes_per_frame * nframes) {
 			underruns++;
+		  fprintf(stderr,"underrun..\n");
 		}
 		return 0;
 	}
@@ -209,7 +222,7 @@ int process (jack_nframes_t nframes, void *arg) {
 				jack_ringbuffer_read (rb, (void *) &bytes, SAMPLESIZE);
 
 				float d=0;
-				if (info->format&1) { /* 24 bit */
+				if (IS_FMT24B) { /* 24 bit */
 					/* http://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence */
 
 					/* This works, but looks weird to me. if you have better code 
@@ -221,9 +234,9 @@ int process (jack_nframes_t nframes, void *arg) {
 					| ( ((int32_t)bytes[BE(2)]&0xff)<<16 )
 					/* negative -- IFF signed */
 #ifdef __BIG_ENDIAN__
-					| (int32_t)((bytes[BE(2)]&0x80 && !(info->format&2))?0xff:0)
+					| (int32_t)((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff:0)
 #else
-					| (int32_t)((bytes[BE(2)]&0x80 && !(info->format&2))?0xff000000:0)
+					| (int32_t)((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff000000:0)
 #endif
 					));
 				} else { /* 16 bit */
@@ -299,9 +312,10 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 void catchsig (int sig) {
 #ifndef _WIN32
 	signal(SIGHUP, catchsig); /* reset signal */
+	signal(SIGINT, catchsig); /* reset signal */
 #endif
 	if (!want_quiet)
-		fprintf(stderr,"\n CAUGHT SIGNAL - shutting down.\n");
+		fprintf(stderr,"\n jack-stdin: CAUGHT SIGNAL - shutting down.\n");
 	run=0;
 	/* signal reader thread */
 	pthread_mutex_lock(&io_thread_lock);
@@ -344,15 +358,17 @@ int main (int argc, char **argv) {
 	thread_info.channels = 2;
 	thread_info.duration = 0;
 	thread_info.format = 0;
+	thread_info.prebuffer = 25.0;
 	thread_info.readfd = fileno(stdin);
 
-	const char *optstring = "d:e:b:S:f:BLhq";
+	const char *optstring = "d:e:b:S:f:p:BLhq";
 	struct option long_options[] = {
 		{ "help", 0, 0, 'h' },
 		{ "quiet", 0, 0, 'q' },
 		{ "duration", 1, 0, 'd' },
 		{ "encoding", 1, 0, 'e' },
 		{ "file", 1, 0, 'f' },
+		{ "prebuffer", 1, 0, 'p' },
 		{ "little-endian", 0, 0, 'L' },
 		{ "big-endian", 0, 0, 'B' },
 		{ "bitdepth", 1, 0, 'b' },
@@ -374,6 +390,11 @@ int main (int argc, char **argv) {
 				break;
 			case 'd':
 				thread_info.duration = atoi(optarg);
+				break;
+			case 'p':
+				thread_info.prebuffer = atof(optarg);
+				if (thread_info.prebuffer<1.0) thread_info.prebuffer=0.0;
+				if (thread_info.prebuffer>90.0) thread_info.prebuffer=90.0;
 				break;
 			case 'e':
 				thread_info.format&=~10;
@@ -447,6 +468,9 @@ int main (int argc, char **argv) {
 		thread_info.duration *= jack_get_sample_rate(thread_info.client);
 	}
 
+	/* TODO: bail out if buffer is smaller than jack_get_buffer_size() */
+	/* TODO: when using small buffers: check if pre-buffer is not too large */
+
 	if (!want_quiet) {
 		fprintf(stderr, "%i channel%s, %s %sbit %s%s %s @%iSPS.\n",
 			thread_info.channels, 
@@ -475,7 +499,8 @@ int main (int argc, char **argv) {
 	/* set up i/o thread */
 	pthread_create(&thread_info.thread_id, NULL, io_thread, &thread_info);
 #ifndef _WIN32
-	signal (SIGHUP, catchsig);                                                                                                                   
+	signal(SIGHUP, catchsig);                                                                                                                   
+	signal(SIGINT, catchsig);
 #endif
 
 	/* all systems go - run the i/o thread */
