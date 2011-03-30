@@ -102,7 +102,8 @@ void * io_thread (void *arg) {
 		       (jack_ringbuffer_read_space (rb) >= bytes_per_frame)) {
 
 			if (info->duration > 0 && total_captured >= info->duration) {
-				printf("disk thread finished\n");
+				if (!want_quiet)
+					fprintf(stderr, "io thread finished\n");
 				goto done;
 			}
 
@@ -120,8 +121,8 @@ void * io_thread (void *arg) {
 				{ 
 					if (!want_quiet)
 						fprintf(stderr, "FATAL: write error.\n");
-					writerrors=0;
-					break;
+						writerrors=0;
+						break;
 				}
 				/* retry */
 				//fprintf(stderr, "buffer not emptied: %i|%i\n", jack_ringbuffer_read_space(rb), jack_ringbuffer_write_space(rb));
@@ -252,8 +253,10 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 	for (i = 0; i < nports; i++) {
 		if (jack_connect(info->client, source_names[i], jack_port_name(ports[i]))) {
 			fprintf(stderr, "cannot connect input port %s to %s\n", jack_port_name(ports[i]), source_names[i]);
+#if 0 /* not fatal - connect manually */
 			jack_client_close(info->client);
 			exit(1);
+#endif
 		} 
 	}
 
@@ -266,7 +269,7 @@ void catchsig (int sig) {
 	signal(SIGHUP, catchsig); /* reset signal */
 #endif
 	if (!want_quiet)
-		fprintf(stdout,"\n CAUGHT SIGNAL - shutting down.\n");
+		fprintf(stderr,"\n CAUGHT SIGNAL - shutting down.\n");
 	run=0;
 	/* signal writer thread */
 	pthread_mutex_lock(&io_thread_lock);
