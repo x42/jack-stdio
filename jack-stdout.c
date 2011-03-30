@@ -63,10 +63,18 @@ typedef struct _thread_info {
 	 */
 } jack_thread_info_t;
 
+#ifdef __BIG_ENDIAN__
+#define BE(i) (!(info->format&4)?((((info->format&1))?2:1)-i):i)
+#else
 #define BE(i) ((info->format&4)?((((info->format&1))?2:1)-i):i)
+#endif
 #define FMTMLT ((info->format&1)?8388608.0:32767.0)
 #define FMTOFF ((info->format&2)?((info->format&1)?4194304:16384):0)
 #define SAMPLESIZE ((info->format&8)?4:((info->format&1)?3:2))
+
+#define IS_FMT32B (info->format&8)
+#define IS_BIGEND (info->format&4)
+#define IS_FMT24B (info->format&1)
 
 /* JACK data */
 jack_port_t **ports;
@@ -179,10 +187,10 @@ int process (jack_nframes_t nframes, void *arg) {
 			twobyte[1] = (unsigned char) (((d&0xff00)>>8)&0xff);
 			jack_ringbuffer_write (rb, (void *) &twobyte, SAMPLESIZE);
 #else
-			if (info->format & 8) { 
+			if (IS_FMT32B) { 
 				/* 32 bit float */
 				float d;
-				if (info->format & 4) {
+				if (IS_BIGEND) {
 					/* swap float endianess */
 					char *flin = (char*) & js;
 					char *fout = (char*) & d;
@@ -200,7 +208,7 @@ int process (jack_nframes_t nframes, void *arg) {
 				char bytes[3];
 				bytes[BE(0)] = (unsigned char) (d&0xff);
 				bytes[BE(1)] = (unsigned char) (((d&0xff00)>>8)&0xff);
-				if (info->format&1)
+				if (IS_FMT24B)
 					bytes[BE(2)] = (unsigned char) (((d&0xff0000)>>16)&0xff);
 				jack_ringbuffer_write (rb, (void *) &bytes, SAMPLESIZE);
 			}
