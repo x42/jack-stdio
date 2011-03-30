@@ -34,6 +34,9 @@
 #include <getopt.h>
 #include <signal.h>
 #include <math.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <jack/jack.h>
 #include <jack/ringbuffer.h>
 
@@ -99,7 +102,7 @@ void * io_thread (void *arg) {
 		       (jack_ringbuffer_write_space (rb) >= bytes_per_frame)) {
 
 			if (info->duration > 0 && total_captured >= info->duration) {
-				printf("disk thread finished\n");
+				printf("io thread finished\n");
 				goto done;
 			}
 
@@ -112,6 +115,7 @@ void * io_thread (void *arg) {
 
 			int rv = read(info->readfd, framebuf, bytes_per_frame);
 
+			/* TODO: better error handling */
 			if (rv < 0) {readerror=1; break;} // Error
 			if (rv == 0) {readerror=1; break;} // EOF
 			if (rv != bytes_per_frame) {readerror=1; break;} // XXX queue ...
@@ -124,11 +128,13 @@ void * io_thread (void *arg) {
 	}
 
 	fprintf(stderr, "EOF..\n");
-	// wait until all data is processed
-	while (jack_ringbuffer_read_space(rb)> 1024 * bytes_per_frame) usleep(1000); // XX
+
+	/* wait until all data is processed */
+	while (jack_ringbuffer_read_space(rb) > 
+			jack_get_buffer_size(info->client) * bytes_per_frame) 
+		usleep(1000);
 
 done:
-	// TODO close readfd if it's not stdin
 	pthread_mutex_unlock(&io_thread_lock);
 	free(framebuf);
 	return 0;
@@ -139,6 +145,8 @@ int process (jack_nframes_t nframes, void *arg) {
 	size_t i;
 	jack_thread_info_t *info = (jack_thread_info_t *) arg;
 	const size_t bytes_per_frame = info->channels * SAMPLESIZE;
+
+	if ((!info->can_process)) return 0;
 
 	for (chn = 0; chn < info->channels; ++chn)
 		out[chn] = jack_port_get_buffer(ports[chn], nframes);
@@ -167,7 +175,7 @@ int process (jack_nframes_t nframes, void *arg) {
 	for (i = 0; i < nframes; i++) {
 
 		for (chn = 0; chn < info->channels; ++chn) {
-#if 1
+#if 0
 			/* convert from 16 bit signed LE */
 			char twobyte[2];
 			jack_ringbuffer_read (rb, (void *) &twobyte, SAMPLESIZE);
@@ -175,24 +183,47 @@ int process (jack_nframes_t nframes, void *arg) {
 			out[chn][i] = (jack_default_audio_sample_t) (d / 32767.0);
 			//out[chn][i] = (jack_default_audio_sample_t) ( ((int16_t) twobyte) / 32767.0);
 #else /* TODO  - invert direction */
-			//jack_default_audio_sample_t *js = out[chn];
-			if (IS_FMT32B) { 
+			jack_default_audio_sample_t js;
+			if (IS_FMT32B) {
 				/* 32 bit float */
 				float d;
+				jack_ringbuffer_read (rb, (void *) &d, SAMPLESIZE);
 				if (IS_BIGEND) {
 					/* swap float endianess */
-					char *flin = (char*) & js;
-					char *fout = (char*) & d;
+					char *flin = (char*) & d;
+					char *fout = (char*) & js;
 					fout[0] = flin[3];
 					fout[1] = flin[2];
 					fout[2] = flin[1];
 					fout[3] = flin[0];
 				} else {
-				  d = js;
+				  js = d;
 				}
-				jack_ringbuffer_write(rb, (void *) &d, SAMPLESIZE);
+				out[chn][i] = (jack_default_audio_sample_t) js;
 			} else {
 				/* 16/24 LE/BE signed/unsigned */
+				char bytes[3];
+				jack_ringbuffer_read (rb, (void *) &bytes, SAMPLESIZE);
+
+				float d=0;
+				if (info->format&1) { // 24 bit
+					d=
+					((int32_t) (
+					   (((int32_t)(bytes[BE(0)]))&0xff)
+					| ((((int32_t)(bytes[BE(1)]))&0xff)<<8) 
+					| ((((int32_t)(bytes[BE(2)]))&0xff)<<16)
+					|   ((int32_t)((bytes[BE(2)]&0x80 && !(info->format&2))?0xff000000:0)) /* negative -- IFF signed*/
+					));
+				} else {
+					d=
+					((int16_t) (
+					   (((int16_t)(bytes[BE(0)]))&0xff)
+					| ((((int16_t)(bytes[BE(1)]))&0xff)<<8) 
+					));
+				}
+
+				out[chn][i] = (jack_default_audio_sample_t) ((d-FMTOFF) / FMTMLT);
+/*
 				const int32_t d = (int32_t) rintf(js*FMTMLT) + FMTOFF;
 				char bytes[3];
 				bytes[BE(0)] = (unsigned char) (d&0xff);
@@ -200,6 +231,7 @@ int process (jack_nframes_t nframes, void *arg) {
 				if (info->format&1)
 					bytes[BE(2)] = (unsigned char) (((d&0xff0000)>>16)&0xff);
 				jack_ringbuffer_write (rb, (void *) &bytes, SAMPLESIZE);
+*/
 			}
 #endif
 		}
@@ -301,6 +333,7 @@ int main (int argc, char **argv) {
 	jack_thread_info_t thread_info;
 	jack_status_t jstat;
 	int c;
+	char *infn = NULL;
 
 	memset(&thread_info, 0, sizeof(thread_info));
 	thread_info.rb_size = 16384 * 4; //< make this an option
@@ -309,12 +342,13 @@ int main (int argc, char **argv) {
 	thread_info.format = 0;
 	thread_info.readfd = fileno(stdin);
 
-	const char *optstring = "d:e:b:S:BLhq";
+	const char *optstring = "d:e:b:S:f:BLhq";
 	struct option long_options[] = {
 		{ "help", 0, 0, 'h' },
 		{ "quiet", 0, 0, 'q' },
 		{ "duration", 1, 0, 'd' },
 		{ "encoding", 1, 0, 'e' },
+		{ "file", 1, 0, 'f' },
 		{ "little-endian", 0, 0, 'L' },
 		{ "big-endian", 0, 0, 'B' },
 		{ "bitdepth", 1, 0, 'b' },
@@ -329,6 +363,10 @@ int main (int argc, char **argv) {
 				break;
 			case 'q':
 				want_quiet = 1;
+				break;
+			case 'f':
+				free(infn);
+				infn=strdup(optarg);
 				break;
 			case 'd':
 				thread_info.duration = atoi(optarg);
@@ -383,6 +421,14 @@ int main (int argc, char **argv) {
 		usage(argv[0], 1);
 	}
 
+	if (infn) {
+		thread_info.readfd = open(infn, O_RDONLY) ;
+		if (thread_info.readfd <0) {
+			fprintf(stderr, "Can not open file.\n");
+			exit(1);
+		}
+	}
+
 	/* set up JACK client */
 	if ((client = jack_client_open("jstdin", JackNoStartServer, &jstat)) == 0) {
 		fprintf(stderr, "Can not connect to JACK.\n");
@@ -415,6 +461,7 @@ int main (int argc, char **argv) {
 	jack_set_process_callback(client, process, &thread_info);
 	jack_on_shutdown(client, jack_shutdown, &thread_info);
 
+
 	if (jack_activate(client)) {
 		fprintf(stderr, "cannot activate client");
 	}
@@ -432,6 +479,13 @@ int main (int argc, char **argv) {
 	pthread_join(thread_info.thread_id, NULL);
 
 	/* end - clean up */
+
+	/* close readfd if it is not stdin*/
+	if (infn) {
+	  close(thread_info.readfd);
+		free(infn);
+	}
+	
 	if (underruns > 0 && !want_quiet) {
 		fprintf(stderr, "Note: there were %ld buffer underruns.\n", underruns);
 	}
