@@ -435,7 +435,7 @@ int main (int argc, char **argv) {
 			(thread_info.format&0x20)?"":(thread_info.format&0x10?"unsigned-":"signed-"),
 			(thread_info.format&0x20)?"float":"integer",
 			(thread_info.format&0x20)?
-				(thread_info.format&0x40?"native-endian":"non-native-endian"):
+				(thread_info.format&0x40?"non-native-endian":"native-endian"):
 				(thread_info.format&0x40?"big-endian":"little-endian"),
 		  jack_get_sample_rate(thread_info.client)
 				);
