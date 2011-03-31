@@ -1,4 +1,4 @@
-Source: jack-stdout
+Source: jack-stdio
 Section: sound
 Priority: optional
 Maintainer: Robin Gareus <robin@gareus.org>
@@ -7,10 +7,11 @@ Build-Depends: debhelper (>= 7.0.50~),
 Homepage: http://rg42.org/oss/jackstdout/
 Standards-Version: 3.9.1
 
-Package: jack-stdout
+Package: jack-stdio
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Recommends: sox
+Replaces: jack-stdout
 Description: program to pipe audio-data from JACK
  A simple command-line utility to write raw audio-data
  from JACK to standard-output. 
