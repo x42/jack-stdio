@@ -4,9 +4,3 @@ jack-stdio (1.1-1) unstable; urgency=low
   * version 1.1
 
  -- Robin Gareus <robin@gareus.org>  Thu, 31 Mar 2011 18:12:16 +0200
-
-jack-stdout (1.0-2) unstable; urgency=low
-
-  * version 1.0
-
- -- Robin Gareus <robin@gareus.org>  Tue, 29 Mar 2011 21:24:00 +0200

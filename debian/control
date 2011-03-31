@@ -12,14 +12,16 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Recommends: sox
 Replaces: jack-stdout
-Description: program to pipe audio-data from JACK
- A simple command-line utility to write raw audio-data
- from JACK to standard-output. 
+Description: program to pipe audio-data from and to JACK
+ Two simple command-line utilities to read and write raw audio-data
+ from JACK from/to standard-io. 
  .
- jack-stdout supports unlimited number of channel 
+ jack-stdio supports unlimited number of channel 
  and a variety of raw PCM encodings:
- signed/unsigned 16/24 bit integer, floating-point,
+ signed/unsigned 8/16/24/24 bit integer, floating-point,
  little/big-endian.
  .
- It can be used to capture or with additional tools to 
+ jack-stdout can be used to capture or with additional tools to 
  live-encoding audio from JACK.
+ .
+ jack-stdin pipes data from some external command into JACK.
