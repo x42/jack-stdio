@@ -60,6 +60,8 @@ Print a brief usage information
 \fB-p\fR, \fB--prebuffer\fR \fIPERCENT\fR
 .RS
 Pre-fill the buffer before starting audio output to JACK (default 25.0%).
+NOTE: disable pre-buffering (-p 0) or use a small buffer size to play back
+very short samples.
 .RE
 
 .TP
@@ -101,6 +103,11 @@ Note: the buffersize must be larger than JACK's period size.
   cat /dev/dsp \\
 	| ./jack-stdin system:playback_1 system:playback_2
 .fi
+.SH "KNOWN ISSUES"
+.PP
+jack-stdin is not suitable to play-back files shorter than
+twice the jack-period size.
+
 .SH AUTHOR
 Robin Gareus <robin@gareus.org>.
 .SH SEE ALSO
