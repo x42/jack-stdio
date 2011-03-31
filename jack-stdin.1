@@ -92,13 +92,13 @@ Note: the buffersize must be larger than JACK's period size.
 
 .SH EXAMPLES
 .nf
-  ./jack-stdout vlc_31994:out_1 vlc_31994:out_2 \
-	| sox -t raw -r 48k -e signed -b 16 -c 2 - \
-	      -t raw -r 48k -e signed -b 16 -c 2 - \
-	   tremolo 5 100 \
+  ./jack-stdout vlc_31994:out_1 vlc_31994:out_2 \\
+	| sox -t raw -r 48k -e signed -b 16 -c 2 - \\
+	      -t raw -r 48k -e signed -b 16 -c 2 - \\
+	   tremolo 5 100 \\
 	| ./jack-stdin system:playback_1 system:playback_2
 
-  cat /dev/dsp \
+  cat /dev/dsp \\
 	| ./jack-stdin system:playback_1 system:playback_2
 .fi
 .SH AUTHOR
