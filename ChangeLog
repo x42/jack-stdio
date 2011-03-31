@@ -1,3 +1,11 @@
+2011-03-31  rgareus  <robin@gareus.org>
+	* removed some warnings that went to stdout
+	* fixed few typos in manual
+	* added jack-stdin
+	* support for 8 and 32 bit integers
+	* added test-cases
+	* v1.1
+
 2011-03-29  rgareus  <robin@gareus.org>
 	* major rewrite
 	* dynamic channel count

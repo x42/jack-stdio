@@ -30,6 +30,6 @@ uninstall:
 	-rmdir $(DESTDIR)$(PREFIX)/share/man/man1
 
 clean:
-	/bin/rm -f jack-stdout
+	/bin/rm -f jack-stdout jack-stdin
 
 .PHONY: all install uninstall clean
