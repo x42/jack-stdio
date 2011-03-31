@@ -53,19 +53,19 @@ typedef struct _thread_info {
 	int readfd;
 	int format; 
 	/**format:
-	 * bit0: 16/24 ; bit1: signed/unsiged, bit2: little/big endian || 8: float 
-	 * IOW: 
-	 * little-endian: 0: S16, 1: S24, 2: U16, 3: U24,
-	 * big-endian:    4:S16, 5: S24, 6: U16, 7: U24,
-	 *                8: float (machine native endianess) , 12: float (swapped endianness)
+	 * bit0,1: 16/24/8/32(float)
+	 * bit8:   signed/unsiged (0x10)
+	 * bit9:   int/float      (0x20) - dup -- 0x03
+	 * bit10:  little/big endian  (0x40)
 	 */
 } jack_thread_info_t;
 
 #define IS_FMTFLT ((info->format&0x20))
-#define IS_FMT32B ((info->format&0x23)==3)
 #define IS_BIGEND (info->format&0x40)
-#define IS_FMT08B ((info->format&3)==2)
+#define IS_FMT32B ((info->format&0x23)==3)
 #define IS_FMT24B ((info->format&3)==1)
+#define IS_FMT16B ((info->format&3)==0)
+#define IS_FMT08B ((info->format&3)==2)
 #define IS_SIGNED (!(info->format&0x10))
 
 #define SAMPLESIZE ((info->format&2)?((info->format&1)?4:1):((info->format&1)?3:2))
@@ -141,7 +141,7 @@ void * io_thread (void *arg) {
 			pthread_cond_wait(&data_ready, &io_thread_lock);
 	}
 
-	fprintf(stderr, "jack-stdin: EOF..\n"); /* DEBUG */
+	//fprintf(stderr, "jack-stdin: EOF..\n"); /* DEBUG */
 
 	/* wait until all data is processed */
 	while (run && info->prebuffer == 0 && 
@@ -239,8 +239,7 @@ int process (jack_nframes_t nframes, void *arg) {
 				} else if (IS_FMT24B) { /* 24 bit */
 					/* http://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence */
 
-					/* This works, but looks weird to me. if you have better code 
-					 * don't hesitate to contact me*/
+					/* This works, but looks weird to me. -> unify alike jack-stdout.c*/
 					d=
 					((int32_t) (
 					  ( ((int32_t)bytes[BE(0)]&0xff)     )
