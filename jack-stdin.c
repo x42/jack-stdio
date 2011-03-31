@@ -228,30 +228,23 @@ int process (jack_nframes_t nframes, void *arg) {
 				if (IS_FMT32B)
 					d|= ( ((int32_t)bytes[BE(3)]&0xff)<<24 );
 
-				if (IS_FMT24B) d|=
+
+				if (IS_FMT32B) {
+					if (!IS_SIGNED) d^=0x80000000;
+				} else if (IS_SIGNED && (bytes[BE((SAMPLESIZE-1))]&0x80)) {
 #ifdef __BIG_ENDIAN__
-				((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff:0);
+					const int32_t mask[3] = { 0x00ffffff, 0x0000ffff, 0x000000ff };
 #else
-				((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff000000:0);
+					const int32_t mask[3] = { 0xffffff00, 0xffff0000, 0xff000000 };
 #endif
-				else if (IS_FMT08B) d|=
-#ifdef __BIG_ENDIAN__
-				((bytes[0]&0x80 && IS_SIGNED)?0xffffff:0);
-#else
-				((bytes[0]&0x80 && IS_SIGNED)?0xffffff00:0);
-#endif
-				else if (IS_FMT16B) d|=
-#ifdef __BIG_ENDIAN__
-				((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff:0);
-#else
-				((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff0000:0);
-#endif
-				else if (!IS_SIGNED) d^=0x80000000;
+					d|= mask[SAMPLESIZE-1];
+				}
 
 				out[chn][i] = (jack_default_audio_sample_t) ((float)(d-FMTOFF) / FMTMLT);
 			}
-		}
-	}
+		} /* end - foreach channel */
+	} /* end - foreach sample */
+
 	/* Tell the io thread there that frames have been dequeued. */ 
 	if (pthread_mutex_trylock(&io_thread_lock) == 0) {
 	    pthread_cond_signal(&data_ready);
