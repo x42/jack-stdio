@@ -1,4 +1,4 @@
-jack-stdio (1.1-1) unstable; urgency=low
+jack-stdio (1.1-2) unstable; urgency=low
 
   * renamed from jack-stdout to jack-stdio
   * version 1.1
