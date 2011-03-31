@@ -55,26 +55,33 @@ typedef struct _thread_info {
 	volatile int can_process;
 	int format; 
 	/**format:
-	 * bit0: 16/24 ; bit1: signed/unsiged, bit2: little/big endian || 8: float 
-	 * IOW: 
-	 * little-endian: 0: S16, 1: S24, 2: U16, 3: U24,
-	 * big-endian:    4:S16, 5: S24, 6: U16, 7: U24,
-	 *                8: float (machine native endianess) , 12: float (swapped endianness)
+	 * bit0,1: 16/24/8/32(float)
+	 * bit8:   signed/unsiged (0x10)
+	 * bit9:   int/float      (0x20) - dup -- 0x03
+	 * bit10:  little/big endian  (0x40)
 	 */
 } jack_thread_info_t;
 
-#ifdef __BIG_ENDIAN__
-#define BE(i) (!(info->format&4)?((((info->format&1))?2:1)-i):i)
-#else
-#define BE(i) ((info->format&4)?((((info->format&1))?2:1)-i):i)
-#endif
-#define FMTMLT ((info->format&1)?8388608.0:32767.0)
-#define FMTOFF ((info->format&2)?((info->format&1)?4194304:16384):0)
-#define SAMPLESIZE ((info->format&8)?4:((info->format&1)?3:2))
+#define IS_FMTFLT ((info->format&0x20))
+#define IS_BIGEND (info->format&0x40)
+#define IS_FMT32B ((info->format&0x23)==3)
+#define IS_FMT08B ((info->format&3)==2)
+#define IS_FMT24B ((info->format&3)==1)
+#define IS_FMT16B ((info->format&3)==0)
+#define IS_SIGNED (!(info->format&0x10))
 
-#define IS_FMT32B (info->format&8)
-#define IS_BIGEND (info->format&4)
-#define IS_FMT24B (info->format&1)
+#define SAMPLESIZE ((info->format&2)?((info->format&1)?4:1):((info->format&1)?3:2))
+#define POWHX ((info->format&2)?((info->format&1)?2147483647:127):((info->format&1)? 8388607:32767))
+#define POWHS ((info->format&2)?((info->format&1)?2147483648.0:128.0):((info->format&1)? 8388608.0:32768.0))
+
+#define FMTOFF ((IS_SIGNED)?0.0:POWHX)
+#define FMTMLT (POWHS)
+
+#ifdef __BIG_ENDIAN__
+#define BE(i) (!(IS_BIGEND)?(SAMPLESIZE-i-1):i)
+#else
+#define BE(i) ( (IS_BIGEND)?(SAMPLESIZE-i-1):i)
+#endif
 
 /* JACK data */
 jack_port_t **ports;
@@ -187,7 +194,7 @@ int process (jack_nframes_t nframes, void *arg) {
 			twobyte[1] = (unsigned char) (((d&0xff00)>>8)&0xff);
 			jack_ringbuffer_write (rb, (void *) &twobyte, SAMPLESIZE);
 #else
-			if (IS_FMT32B) { 
+			if (IS_FMTFLT) { 
 				/* 32 bit float */
 				float d;
 				if (IS_BIGEND) {
@@ -203,13 +210,16 @@ int process (jack_nframes_t nframes, void *arg) {
 				}
 				jack_ringbuffer_write(rb, (void *) &d, SAMPLESIZE);
 			} else {
-				/* 16/24 LE/BE signed/unsigned */
+				/* 8/16/24 LE/BE signed/unsigned */
 				const int32_t d = (int32_t) rintf(js*FMTMLT) + FMTOFF;
-				char bytes[3];
+				char bytes[4];
 				bytes[BE(0)] = (unsigned char) (d&0xff);
-				bytes[BE(1)] = (unsigned char) (((d&0xff00)>>8)&0xff);
-				if (IS_FMT24B)
+				if (IS_FMT16B || IS_FMT24B || IS_FMT32B)
+					bytes[BE(1)] = (unsigned char) (((d&0xff00)>>8)&0xff);
+				if (IS_FMT24B || IS_FMT32B)
 					bytes[BE(2)] = (unsigned char) (((d&0xff0000)>>16)&0xff);
+				if (IS_FMT32B)
+					bytes[BE(3)] = (unsigned char) (((d&0xff000000)>>24)&0xff);
 				jack_ringbuffer_write (rb, (void *) &bytes, SAMPLESIZE);
 			}
 #endif
@@ -344,11 +354,11 @@ int main (int argc, char **argv) {
 				thread_info.duration = atoi(optarg);
 				break;
 			case 'e':
-				thread_info.format&=~10;
+				thread_info.format&=~0x30;
 				if (!strncmp(optarg, "floating-point", strlen(optarg)))
-					thread_info.format|=8;
+					thread_info.format|=0x23;
 				else if (!strncmp(optarg, "unsigned-integer", strlen(optarg)))
-					thread_info.format|=2;
+					thread_info.format|=0x10;
 				else if (!strncmp(optarg, "signed-integer", strlen(optarg))) 
 					;
 				else {
@@ -357,20 +367,24 @@ int main (int argc, char **argv) {
 				}
 				break;
 			case 'b':
-				thread_info.format&=~1;
+				thread_info.format&=~3;
 				if (atoi(optarg) == 24) 
 					thread_info.format|=1;
+				else if (atoi(optarg) == 8) 
+					thread_info.format|=2;
+				else if (atoi(optarg) == 32) 
+					thread_info.format|=3;
 				else if (atoi(optarg) != 16) {
-					fprintf(stderr, "invalid integer bit-depth. valid values: 16,i 24.\n");
+					fprintf(stderr, "invalid integer bit-depth. valid values: 8, 16, 24, 32.\n");
 					usage(argv[0], 1);
 				}
 				break;
 			case 'L':
-				thread_info.format&=~4;
+				thread_info.format&=~0x40;
 				break;
 				thread_info.rb_size = atoi(optarg);
 			case 'B':
-				thread_info.format|=4;
+				thread_info.format|=0x40;
 				break;
 			case 'S':
 				thread_info.rb_size = atoi(optarg);
@@ -383,6 +397,11 @@ int main (int argc, char **argv) {
 	}
 
 	/* sanity checks */
+	if (thread_info.format & 0x20) {
+		/* float is always 32 bit */
+		thread_info.format|=3; 
+	}
+
 	if (thread_info.rb_size < 16) {
 		fprintf(stderr, "Ringbuffer size needs to be at least 16 samples\n");
 		usage(argv[0], 1);
@@ -412,12 +431,12 @@ int main (int argc, char **argv) {
 			thread_info.channels, 
 			(thread_info.channels>1)?"s":"",
 			(thread_info.channels>1)?"interleaved":"",
-			(thread_info.format&8)?"32":(thread_info.format&1?"24":"16"),
-			(thread_info.format&8)?"":(thread_info.format&2?"unsigned-":"signed-"),
-			(thread_info.format&8)?"float":"integer",
-			(thread_info.format&8)?
-				(thread_info.format&4?"native-endian":"non-native-endian"):
-				(thread_info.format&4?"big-endian":"little-endian"),
+			(thread_info.format&2)?(thread_info.format&1?"32":"8"):(thread_info.format&1?"24":"16"),
+			(thread_info.format&0x20)?"":(thread_info.format&0x10?"unsigned-":"signed-"),
+			(thread_info.format&0x20)?"float":"integer",
+			(thread_info.format&0x20)?
+				(thread_info.format&0x40?"native-endian":"non-native-endian"):
+				(thread_info.format&0x40?"big-endian":"little-endian"),
 		  jack_get_sample_rate(thread_info.client)
 				);
 	}
