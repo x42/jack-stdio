@@ -196,14 +196,6 @@ int process (jack_nframes_t nframes, void *arg) {
 	for (i = 0; i < nframes; i++) {
 
 		for (chn = 0; chn < info->channels; ++chn) {
-#if 0
-			/* convert from 16 bit signed LE */
-			char twobyte[2];
-			jack_ringbuffer_read (rb, (void *) &twobyte, SAMPLESIZE);
-			const int16_t d = (twobyte[0]&0xff) + ((twobyte[1]&0xff)<<8);
-			out[chn][i] = (jack_default_audio_sample_t) (d / 32767.0);
-			//out[chn][i] = (jack_default_audio_sample_t) ( ((int16_t) twobyte) / 32767.0);
-#else 
 			jack_default_audio_sample_t js;
 			if (IS_FMTFLT) {
 				/* 32 bit float */
@@ -227,58 +219,37 @@ int process (jack_nframes_t nframes, void *arg) {
 				jack_ringbuffer_read (rb, (void *) &bytes, SAMPLESIZE);
 
 				int32_t d=0;
-			  if (IS_FMT32B) {
-					d=
-					((int32_t) (
-					  ( ((int32_t)bytes[BE(0)]&0xff)     )
-					| ( ((int32_t)bytes[BE(1)]&0xff)<<8  )
-					| ( ((int32_t)bytes[BE(2)]&0xff)<<16 )
-					| ( ((int32_t)bytes[BE(3)]&0xff)<<24 )
-					));
-          if (!IS_SIGNED) d^=0x80000000;
-				} else if (IS_FMT24B) { /* 24 bit */
-					/* http://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence */
+				d|=   ( ((int32_t)bytes[BE(0)]&0xff)     );
 
-					/* This works, but looks weird to me. -> unify alike jack-stdout.c*/
-					d=
-					((int32_t) (
-					  ( ((int32_t)bytes[BE(0)]&0xff)     )
-					| ( ((int32_t)bytes[BE(1)]&0xff)<<8  )
-					| ( ((int32_t)bytes[BE(2)]&0xff)<<16 )
-					/* negative -- IFF signed */
+				if (IS_FMT16B || IS_FMT24B || IS_FMT32B)
+					d|= ( ((int32_t)bytes[BE(1)]&0xff)<<8  );
+				if (IS_FMT24B || IS_FMT32B)
+					d|= ( ((int32_t)bytes[BE(2)]&0xff)<<16 );
+				if (IS_FMT32B)
+					d|= ( ((int32_t)bytes[BE(3)]&0xff)<<24 );
+
+				if (IS_FMT24B) d|=
 #ifdef __BIG_ENDIAN__
-					| (int32_t)((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff:0)
+				((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff:0);
 #else
-					| (int32_t)((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff000000:0)
+				((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff000000:0);
 #endif
-					));
-				}	else if (IS_FMT08B) { /* 8 bit */
-					d=
-					((int32_t) (
-					  ( ((int32_t)bytes[0]&0xff))
-				
+				else if (IS_FMT08B) d|=
 #ifdef __BIG_ENDIAN__
-					| (int32_t)((bytes[0]&0x80 && IS_SIGNED)?0xffffff:0)
+				((bytes[0]&0x80 && IS_SIGNED)?0xffffff:0);
 #else
-					| (int32_t)((bytes[0]&0x80 && IS_SIGNED)?0xffffff00:0)
+				((bytes[0]&0x80 && IS_SIGNED)?0xffffff00:0);
 #endif
-					));
-				} else { /* 16 bit */
-					d=
-					((int32_t) (
-					  ( ((int32_t)bytes[BE(0)]&0xff)    )
-					| ( ((int32_t)bytes[BE(1)]&0xff)<<8 ) 
+				else if (IS_FMT16B) d|=
 #ifdef __BIG_ENDIAN__
-					| (int32_t)((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff:0)
+				((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff:0);
 #else
-					| (int32_t)((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff0000:0)
+				((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff0000:0);
 #endif
-					));
-				}
+				else if (!IS_SIGNED) d^=0x80000000;
 
 				out[chn][i] = (jack_default_audio_sample_t) ((float)(d-FMTOFF) / FMTMLT);
 			}
-#endif
 		}
 	}
 	/* Tell the io thread there that frames have been dequeued. */ 
@@ -519,7 +490,7 @@ int main (int argc, char **argv) {
 			(IS_FMTFLT)?"":(IS_SIGNED?"signed-":"unsigned-"),
 			(IS_FMTFLT)?"float":"integer",
 			(IS_FMTFLT)?
-				(IS_BIGEND?"native-endian":"non-native-endian"):
+				(IS_BIGEND?"non-native-endian":"native-endian"):
 				(IS_BIGEND?"big-endian":"little-endian"),
 		  jack_get_sample_rate(thread_info.client)
 				);
