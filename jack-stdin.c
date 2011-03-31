@@ -2,28 +2,28 @@
  *
  * This tool is based on capture_client.c from the jackaudio.org examples
  * and modified by Robin Gareus <robin@gareus.org>
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- * 
+ *
  * Copyright (C) 2001 Paul Davis
  * Copyright (C) 2003 Jack O'Quin
  * Copyright (C) 2008, 2011 Robin Gareus
- * 
+ *
  * compile with
  *   gcc -o jack-stdin jack-stdin.c -ljack -lm -lpthread
- * 
+ *
  */
 
 #include <stdio.h>
@@ -51,7 +51,7 @@ typedef struct _thread_info {
 	volatile int can_process;
 	float prebuffer;
 	int readfd;
-	int format; 
+	int format;
 	/**format:
 	 * bit0,1: 16/24/8/32(float)
 	 * bit8:   signed/unsiged (0x10)
@@ -116,8 +116,10 @@ void * io_thread (void *arg) {
 		       (jack_ringbuffer_write_space (rb) >= bytes_per_frame)) {
 
 			if (info->duration > 0 && total_captured >= info->duration) {
-				printf("io thread finished\n");
-				goto done;
+				if (!want_quiet)
+					fprintf(stderr, "io thread finished\n");
+				readerror=1;
+				break;
 			}
 
 			#if 0 /* wait (indefinitley) for read-ready */
@@ -137,19 +139,20 @@ void * io_thread (void *arg) {
 			jack_ringbuffer_write(rb, framebuf, bytes_per_frame);
 			++total_captured;
 		}
-		if (!readerror) 
+		if (!readerror && info->prebuffer == 0)
 			pthread_cond_wait(&data_ready, &io_thread_lock);
 	}
 
 	//fprintf(stderr, "jack-stdin: EOF..\n"); /* DEBUG */
 
 	/* wait until all data is processed */
-	while (run && info->prebuffer == 0 && 
-			jack_ringbuffer_read_space(rb) > 
-			jack_get_buffer_size(info->client) * bytes_per_frame) 
+	while (run && info->prebuffer == 0 &&
+			jack_ringbuffer_read_space(rb) >
+			jack_get_buffer_size(info->client) * bytes_per_frame) {
 		usleep(10000);
+		//fprintf(stderr, "waiting...\n");usleep(200000); /* DEBUG */
+	}
 
-done:
 	pthread_mutex_unlock(&io_thread_lock);
 	free(framebuf);
 	return 0;
@@ -159,24 +162,23 @@ int process (jack_nframes_t nframes, void *arg) {
 	int chn;
 	size_t i;
 	jack_thread_info_t *info = (jack_thread_info_t *) arg;
-	const size_t bytes_per_frame = info->channels * SAMPLESIZE;
 
 	if ((!info->can_process)) return 0;
+
+	const size_t bytes_per_frame = info->channels * SAMPLESIZE;
 	const jack_nframes_t rbrs = jack_ringbuffer_read_space(rb);
 
-#if 1 /* initial pre-buffer.. */
-  if (rbrs < ceil(info->rb_size * info->prebuffer / 100.0)) {
-		// fprintf(stderr,"waiting..\n"); /* DEBUG */
+  /* initial pre-buffer. */
+	if (rbrs < ceil(info->rb_size * info->prebuffer / 100.0)) {
+		//fprintf(stderr,"pre-buffer (%.1f%%)\n", 100.0 * (float) rbrs / (float)info->rb_size); /* DEBUG */
 		return 0;
 	}
-	info->prebuffer=0;
-#endif
+	info->prebuffer=0.0;
 
 	for (chn = 0; chn < info->channels; ++chn)
 		out[chn] = jack_port_get_buffer(ports[chn], nframes);
 
-
-	/* Do nothing until we're ready to begin. and 
+	/* Do nothing until we're ready to begin. and
 	   only dequeue samples if a whole period is avail. */
 	if ((!info->can_capture) || (rbrs < bytes_per_frame * nframes)) {
 		/* silence */
@@ -245,7 +247,7 @@ int process (jack_nframes_t nframes, void *arg) {
 		} /* end - foreach channel */
 	} /* end - foreach sample */
 
-	/* Tell the io thread there that frames have been dequeued. */ 
+	/* Tell the io thread there that frames have been dequeued. */
 	if (pthread_mutex_trylock(&io_thread_lock) == 0) {
 	    pthread_cond_signal(&data_ready);
 	    pthread_mutex_unlock(&io_thread_lock);
@@ -295,7 +297,7 @@ void setup_ports (int nports, char *source_names[], jack_thread_info_t *info) {
 			jack_client_close(info->client);
 			exit(1);
 #endif
-		} 
+		}
 	}
 
 	/* process() can start, now */
@@ -318,11 +320,11 @@ void catchsig (int sig) {
 
 
 static void usage (const char *name, int status) {
-	fprintf(status?stderr:stdout, 
+	fprintf(status?stderr:stdout,
 		"usage: %s [ OPTIONS ] port1 [ port2 ... ]\n", name);
-	fprintf(status?stderr:stdout, 
+	fprintf(status?stderr:stdout,
 		"jack-stdin reads raw audio-data from standard-input and writes it to JACK.\n");
-	fprintf(status?stderr:stdout, 
+	fprintf(status?stderr:stdout,
 	  "OPTIONS:\n"
 	  " -h, --help               print this message\n"
 	  " -q, --quiet              inhibit usual output\n"
@@ -348,7 +350,7 @@ int main (int argc, char **argv) {
 	char *infn = NULL;
 
 	memset(&thread_info, 0, sizeof(thread_info));
-	thread_info.rb_size = 16384 * 4; //< make this an option
+	thread_info.rb_size = 16384 * 4;
 	thread_info.channels = 2;
 	thread_info.duration = 0;
 	thread_info.format = 0;
@@ -396,7 +398,7 @@ int main (int argc, char **argv) {
 					thread_info.format|=0x23;
 				else if (!strncmp(optarg, "unsigned-integer", strlen(optarg)))
 					thread_info.format|=0x10;
-				else if (!strncmp(optarg, "signed-integer", strlen(optarg))) 
+				else if (!strncmp(optarg, "signed-integer", strlen(optarg)))
 					;
 				else {
 					fprintf(stderr, "invalid encoding.\n");
@@ -405,11 +407,11 @@ int main (int argc, char **argv) {
 				break;
 			case 'b':
 				thread_info.format&=~3;
-				if (atoi(optarg) == 24) 
+				if (atoi(optarg) == 24)
 					thread_info.format|=1;
-				else if (atoi(optarg) == 8) 
+				else if (atoi(optarg) == 8)
 					thread_info.format|=2;
-				else if (atoi(optarg) == 32) 
+				else if (atoi(optarg) == 32)
 					thread_info.format|=3;
 				else if (atoi(optarg) != 16) {
 					fprintf(stderr, "invalid integer bit-depth. valid values: 16,i 24.\n");
@@ -419,7 +421,6 @@ int main (int argc, char **argv) {
 			case 'L':
 				thread_info.format&=~0x40;
 				break;
-				thread_info.rb_size = atoi(optarg);
 			case 'B':
 				thread_info.format|=0x40;
 				break;
@@ -429,19 +430,14 @@ int main (int argc, char **argv) {
 			default:
 				fprintf(stderr, "invalid argument.\n");
 				usage(argv[0], 0);
-			break;
+				break;
 		}
 	}
 
-	/* sanity checks */
+	/* set options depending on JACK params, and perform sanity checks */
 	if (IS_FMTFLT) {
 		/* float is always 32 bit */
-		thread_info.format|=3; 
-	}
-
-	if (thread_info.rb_size < 16) {
-		fprintf(stderr, "Ringbuffer size needs to be at least 16 samples\n");
-		usage(argv[0], 1);
+		thread_info.format|=3;
 	}
 
 	if (argc <= optind) {
@@ -471,27 +467,24 @@ int main (int argc, char **argv) {
 		thread_info.duration *= jack_get_sample_rate(thread_info.client);
 	}
 
-	/* TODO: bail out if buffer is smaller than jack_get_buffer_size() */
-	/* TODO: when using small buffers: check if pre-buffer is not too large */
+	/* bail out if buffer is smaller than twice the jack period */
+	if ((thread_info.rb_size>>1) < jack_get_buffer_size(thread_info.client)) {
+		fprintf(stderr, "Ringbuffer size needs to be at least twice jack period size\n");
+		jack_client_close(thread_info.client);
+		usage(argv[0], 1);
+	}
 
-	if (!want_quiet) {
-		fprintf(stderr, "%i channel%s, %s %sbit %s%s %s @%iSPS.\n",
-			thread_info.channels, 
-			(thread_info.channels>1)?"s":"",
-			(thread_info.channels>1)?"interleaved":"",
-			(thread_info.format&2)?(thread_info.format&1?"32":"8"):(thread_info.format&1?"24":"16"),
-			(IS_FMTFLT)?"":(IS_SIGNED?"signed-":"unsigned-"),
-			(IS_FMTFLT)?"float":"integer",
-			(IS_FMTFLT)?
-				(IS_BIGEND?"non-native-endian":"native-endian"):
-				(IS_BIGEND?"big-endian":"little-endian"),
-		  jack_get_sample_rate(thread_info.client)
-				);
+	/* when using small buffers: check if pre-buffer is not too large */
+	if ( thread_info.rb_size - ceil(thread_info.rb_size * thread_info.prebuffer /100.0)
+			< jack_get_buffer_size(thread_info.client)
+		 ) {
+		fprintf(stderr, "Prebuffer ratio is too high. It will never finish.\n");
+		jack_client_close(thread_info.client);
+		usage(argv[0], 1);
 	}
 
 	jack_set_process_callback(client, process, &thread_info);
 	jack_on_shutdown(client, jack_shutdown, &thread_info);
-
 
 	if (jack_activate(client)) {
 		fprintf(stderr, "cannot activate client");
@@ -502,9 +495,24 @@ int main (int argc, char **argv) {
 	/* set up i/o thread */
 	pthread_create(&thread_info.thread_id, NULL, io_thread, &thread_info);
 #ifndef _WIN32
-	signal(SIGHUP, catchsig);                                                                                                                   
+	signal(SIGHUP, catchsig);
 	signal(SIGINT, catchsig);
 #endif
+
+	if (!want_quiet) {
+		fprintf(stderr, "%i channel%s, %s %sbit %s%s %s @%iSPS.\n",
+			thread_info.channels,
+			(thread_info.channels>1)?"s":"",
+			(thread_info.channels>1)?"interleaved":"",
+			(thread_info.format&2)?(thread_info.format&1?"32":"8"):(thread_info.format&1?"24":"16"),
+			(IS_FMTFLT)?"":(IS_SIGNED?"signed-":"unsigned-"),
+			(IS_FMTFLT)?"float":"integer",
+			(IS_FMTFLT)?
+				(IS_BIGEND?"non-native-endian":"native-endian"):
+				(IS_BIGEND?"big-endian":"little-endian"),
+			jack_get_sample_rate(thread_info.client)
+		);
+	}
 
 	/* all systems go - run the i/o thread */
 	thread_info.can_capture = 1;
