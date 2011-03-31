@@ -61,20 +61,25 @@ typedef struct _thread_info {
 	 */
 } jack_thread_info_t;
 
+#define IS_FMTFLT ((info->format&0x20))
+#define IS_FMT32B ((info->format&0x23)==3)
+#define IS_BIGEND (info->format&0x40)
+#define IS_FMT08B ((info->format&3)==2)
+#define IS_FMT24B ((info->format&3)==1)
+#define IS_SIGNED (!(info->format&0x10))
+
+#define SAMPLESIZE ((info->format&2)?((info->format&1)?4:1):((info->format&1)?3:2))
+#define POWHX ((info->format&2)?((info->format&1)?0:127):((info->format&1)? 8388607:32767))
+#define POWHS ((info->format&2)?((info->format&1)?2147483648.0:128.0):((info->format&1)? 8388608.0:32768.0))
+
+#define FMTOFF ((IS_SIGNED)?0.0:POWHX)
+#define FMTMLT (POWHS)
+
 #ifdef __BIG_ENDIAN__
-# define BE(i) (!(info->format&4)?((((info->format&1))?2:1)-i):i)
+#define BE(i) (!(IS_BIGEND)?(SAMPLESIZE-i-1):i)
 #else
-# define BE(i) ((info->format&4)?((((info->format&1))?2:1)-i):i)
+#define BE(i) ( (IS_BIGEND)?(SAMPLESIZE-i-1):i)
 #endif
-
-#define FMTMLT ((info->format&1)?8388608.0:32767.0)
-#define FMTOFF ((info->format&2)?((info->format&1)?4194304:16384):0)
-#define SAMPLESIZE ((info->format&8)?4:((info->format&1)?3:2))
-
-#define IS_FMT32B (info->format&8)
-#define IS_FMT24B (info->format&1)
-#define IS_SIGNED (!(info->format&2))
-#define IS_BIGEND (info->format&4)
 
 /* JACK data */
 jack_port_t **ports;
@@ -139,7 +144,7 @@ void * io_thread (void *arg) {
 	fprintf(stderr, "jack-stdin: EOF..\n"); /* DEBUG */
 
 	/* wait until all data is processed */
-	while (info->prebuffer == 0 && 
+	while (run && info->prebuffer == 0 && 
 			jack_ringbuffer_read_space(rb) > 
 			jack_get_buffer_size(info->client) * bytes_per_frame) 
 		usleep(10000);
@@ -200,7 +205,7 @@ int process (jack_nframes_t nframes, void *arg) {
 			//out[chn][i] = (jack_default_audio_sample_t) ( ((int16_t) twobyte) / 32767.0);
 #else 
 			jack_default_audio_sample_t js;
-			if (IS_FMT32B) {
+			if (IS_FMTFLT) {
 				/* 32 bit float */
 				float d;
 				jack_ringbuffer_read (rb, (void *) &d, SAMPLESIZE);
@@ -217,12 +222,21 @@ int process (jack_nframes_t nframes, void *arg) {
 				}
 				out[chn][i] = (jack_default_audio_sample_t) js;
 			} else {
-				/* 16/24 LE/BE signed/unsigned */
-				char bytes[3];
+				/* 8/16/24/32 LE/BE signed/unsigned */
+				char bytes[4];
 				jack_ringbuffer_read (rb, (void *) &bytes, SAMPLESIZE);
 
-				float d=0;
-				if (IS_FMT24B) { /* 24 bit */
+				int32_t d=0;
+			  if (IS_FMT32B) {
+					d=
+					((int32_t) (
+					  ( ((int32_t)bytes[BE(0)]&0xff)     )
+					| ( ((int32_t)bytes[BE(1)]&0xff)<<8  )
+					| ( ((int32_t)bytes[BE(2)]&0xff)<<16 )
+					| ( ((int32_t)bytes[BE(3)]&0xff)<<24 )
+					));
+          if (!IS_SIGNED) d^=0x80000000;
+				} else if (IS_FMT24B) { /* 24 bit */
 					/* http://en.wikipedia.org/wiki/Operators_in_C_and_C%2B%2B#Operator_precedence */
 
 					/* This works, but looks weird to me. if you have better code 
@@ -239,15 +253,31 @@ int process (jack_nframes_t nframes, void *arg) {
 					| (int32_t)((bytes[BE(2)]&0x80 && IS_SIGNED)?0xff000000:0)
 #endif
 					));
+				}	else if (IS_FMT08B) { /* 8 bit */
+					d=
+					((int32_t) (
+					  ( ((int32_t)bytes[0]&0xff))
+				
+#ifdef __BIG_ENDIAN__
+					| (int32_t)((bytes[0]&0x80 && IS_SIGNED)?0xffffff:0)
+#else
+					| (int32_t)((bytes[0]&0x80 && IS_SIGNED)?0xffffff00:0)
+#endif
+					));
 				} else { /* 16 bit */
 					d=
-					((int16_t) (
-					  ( ((int16_t)bytes[BE(0)]&0xff)    )
-					| ( ((int16_t)bytes[BE(1)]&0xff)<<8 ) 
+					((int32_t) (
+					  ( ((int32_t)bytes[BE(0)]&0xff)    )
+					| ( ((int32_t)bytes[BE(1)]&0xff)<<8 ) 
+#ifdef __BIG_ENDIAN__
+					| (int32_t)((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff:0)
+#else
+					| (int32_t)((bytes[BE(1)]&0x80 && IS_SIGNED)?0xffff0000:0)
+#endif
 					));
 				}
 
-				out[chn][i] = (jack_default_audio_sample_t) ((d-FMTOFF) / FMTMLT);
+				out[chn][i] = (jack_default_audio_sample_t) ((float)(d-FMTOFF) / FMTMLT);
 			}
 #endif
 		}
@@ -349,6 +379,7 @@ static void usage (const char *name, int status) {
 int main (int argc, char **argv) {
 	jack_client_t *client;
 	jack_thread_info_t thread_info;
+	jack_thread_info_t *info = &thread_info;
 	jack_status_t jstat;
 	int c;
 	char *infn = NULL;
@@ -397,11 +428,11 @@ int main (int argc, char **argv) {
 				if (thread_info.prebuffer>90.0) thread_info.prebuffer=90.0;
 				break;
 			case 'e':
-				thread_info.format&=~10;
+				thread_info.format&=~0x30;
 				if (!strncmp(optarg, "floating-point", strlen(optarg)))
-					thread_info.format|=8;
+					thread_info.format|=0x23;
 				else if (!strncmp(optarg, "unsigned-integer", strlen(optarg)))
-					thread_info.format|=2;
+					thread_info.format|=0x10;
 				else if (!strncmp(optarg, "signed-integer", strlen(optarg))) 
 					;
 				else {
@@ -410,20 +441,24 @@ int main (int argc, char **argv) {
 				}
 				break;
 			case 'b':
-				thread_info.format&=~1;
+				thread_info.format&=~3;
 				if (atoi(optarg) == 24) 
 					thread_info.format|=1;
+				else if (atoi(optarg) == 8) 
+					thread_info.format|=2;
+				else if (atoi(optarg) == 32) 
+					thread_info.format|=3;
 				else if (atoi(optarg) != 16) {
 					fprintf(stderr, "invalid integer bit-depth. valid values: 16,i 24.\n");
 					usage(argv[0], 1);
 				}
 				break;
 			case 'L':
-				thread_info.format&=~4;
+				thread_info.format&=~0x40;
 				break;
 				thread_info.rb_size = atoi(optarg);
 			case 'B':
-				thread_info.format|=4;
+				thread_info.format|=0x40;
 				break;
 			case 'S':
 				thread_info.rb_size = atoi(optarg);
@@ -436,6 +471,11 @@ int main (int argc, char **argv) {
 	}
 
 	/* sanity checks */
+	if (IS_FMTFLT) {
+		/* float is always 32 bit */
+		thread_info.format|=3; 
+	}
+
 	if (thread_info.rb_size < 16) {
 		fprintf(stderr, "Ringbuffer size needs to be at least 16 samples\n");
 		usage(argv[0], 1);
@@ -476,12 +516,12 @@ int main (int argc, char **argv) {
 			thread_info.channels, 
 			(thread_info.channels>1)?"s":"",
 			(thread_info.channels>1)?"interleaved":"",
-			(thread_info.format&8)?"32":(thread_info.format&1?"24":"16"),
-			(thread_info.format&8)?"":(thread_info.format&2?"unsigned-":"signed-"),
-			(thread_info.format&8)?"float":"integer",
-			(thread_info.format&8)?
-				(thread_info.format&4?"native-endian":"non-native-endian"):
-				(thread_info.format&4?"big-endian":"little-endian"),
+			(thread_info.format&2)?(thread_info.format&1?"32":"8"):(thread_info.format&1?"24":"16"),
+			(IS_FMTFLT)?"":(IS_SIGNED?"signed-":"unsigned-"),
+			(IS_FMTFLT)?"float":"integer",
+			(IS_FMTFLT)?
+				(IS_BIGEND?"native-endian":"non-native-endian"):
+				(IS_BIGEND?"big-endian":"little-endian"),
 		  jack_get_sample_rate(thread_info.client)
 				);
 	}
