@@ -77,11 +77,7 @@ typedef struct _thread_info {
 #define FMTOFF ((IS_SIGNED)?0.0:POWHX)
 #define FMTMLT (POWHS)
 
-#ifdef __BIG_ENDIAN__
-#define BE(i) (!(IS_BIGEND)?(SAMPLESIZE-i-1):i)
-#else
 #define BE(i) ( (IS_BIGEND)?(SAMPLESIZE-i-1):i)
-#endif
 
 /* JACK data */
 jack_port_t **ports;

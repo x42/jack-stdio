@@ -75,11 +75,7 @@ typedef struct _thread_info {
 #define FMTOFF ((IS_SIGNED)?0.0:POWHX)
 #define FMTMLT (POWHS)
 
-#ifdef __BIG_ENDIAN__
-#define BE(i) (!(IS_BIGEND)?(SAMPLESIZE-i-1):i)
-#else
 #define BE(i) ( (IS_BIGEND)?(SAMPLESIZE-i-1):i)
-#endif
 
 /* JACK data */
 jack_port_t **ports;
@@ -234,11 +230,7 @@ int process (jack_nframes_t nframes, void *arg) {
 				if (IS_FMT32B) {
 					if (!IS_SIGNED) d^=0x80000000;
 				} else if (IS_SIGNED && (bytes[BE((SAMPLESIZE-1))]&0x80)) {
-#ifdef __BIG_ENDIAN__
-					const int32_t mask[3] = { 0x00ffffff, 0x0000ffff, 0x000000ff };
-#else
 					const int32_t mask[3] = { 0xffffff00, 0xffff0000, 0xff000000 };
-#endif
 					d|= mask[SAMPLESIZE-1];
 				}
 
