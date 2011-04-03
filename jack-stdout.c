@@ -41,6 +41,7 @@
 #include <getopt.h>
 #include <signal.h>
 #include <math.h>
+#include <errno.h>
 #include <jack/jack.h>
 #include <jack/ringbuffer.h>
 
@@ -91,7 +92,7 @@ pthread_cond_t  data_ready = PTHREAD_COND_INITIALIZER;
 
 /* global options/status */
 int want_quiet = 0;
-int run = 1;
+volatile int run = 1;
 long overruns = 0;
 
 void * io_thread (void *arg) {
@@ -118,7 +119,10 @@ void * io_thread (void *arg) {
 				goto done;
 			}
 
-			#if 0 /* wait (indefinitley) for write-ready */
+			#if 0 
+			/* wait (indefinitley) for write-ready
+			 * this select() is only needed if fileno(stdout) is non-blocking
+			 */
 			fd_set fd;
 			FD_ZERO(&fd);
 			FD_SET(fileno(stdout), &fd);
@@ -126,18 +130,38 @@ void * io_thread (void *arg) {
 			#endif
 
 			jack_ringbuffer_read(rb, framebuf, bytes_per_frame);
-			while (write(fileno(stdout) , framebuf, bytes_per_frame) != bytes_per_frame)
+			size_t woff = 0;
+			ssize_t rv;
+			while ((rv=write(fileno(stdout), framebuf+woff, bytes_per_frame)) != bytes_per_frame)
 			{
-				if (++writerrors>5)
-				{
-					if (!want_quiet)
-						fprintf(stderr, "FATAL: write error.\n");
-						writerrors=0;
-						/* TODO: bail out ? */
+
+				if (rv<0) {
+					if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+						if (!want_quiet)
+							fprintf(stderr, "FATAL: write error: %s\n", strerror(errno));
+						run=0;
 						break;
+					}
 				}
-				/* retry */
-				//fprintf(stderr, "buffer not emptied: %i|%i\n", jack_ringbuffer_read_space(rb), jack_ringbuffer_write_space(rb));
+
+				if (rv>0) woff += rv;
+
+				if (++writerrors > 16) {
+					writerrors=0;
+					if (!want_quiet)
+						fprintf(stderr, "write error. retrying.\n");
+					#if 0 /* bail out ?! */
+						/* flush remaining bytes from ringbuffer */
+						if (rv>=0) {
+							rv=0;
+							while (bytes_per_frame - woff - rv > 0) {
+								jack_ringbuffer_read(rb, framebuf, 1);
+							  ++rv;
+							}
+						}
+						break;
+					#endif
+				}
 				
 				#if 0
 				/* this thread can just block..
