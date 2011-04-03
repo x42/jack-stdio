@@ -346,7 +346,7 @@ int main (int argc, char **argv) {
 	thread_info.channels = 2;
 	thread_info.duration = 0;
 	thread_info.format = 0;
-	thread_info.prebuffer = 25.0;
+	thread_info.prebuffer = 50.0;
 	thread_info.readfd = fileno(stdin);
 
 	const char *optstring = "d:e:b:S:f:p:BLhq";
