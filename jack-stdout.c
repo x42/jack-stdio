@@ -139,8 +139,7 @@ void * io_thread (void *arg) {
 					if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
 						if (!want_quiet)
 							fprintf(stderr, "FATAL: write error: %s\n", strerror(errno));
-						run=0;
-						break;
+						goto done;
 					}
 				}
 
