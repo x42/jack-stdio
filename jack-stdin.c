@@ -89,7 +89,7 @@ pthread_cond_t  data_ready = PTHREAD_COND_INITIALIZER;
 
 /* global options/status */
 int want_quiet = 0;
-int run = 1;
+volatile int run = 1;
 long underruns = 0;
 
 void * io_thread (void *arg) {
