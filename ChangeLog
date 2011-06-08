@@ -1,3 +1,8 @@
+2011-06-07  rgareus  <robin@gareus.org>
+	* clean-up manual page (thanks to Alessio Tregilia)
+	* small PREFIX makefile patch (also by Alessio)
+	* v1.4
+
 2011-04-03  rgareus  <robin@gareus.org>
 	* fixed jack-stdout write retry/abort
 	* increased default jack-stdin buffer-prefill to 50%
