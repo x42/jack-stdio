@@ -80,16 +80,16 @@ to get the size of the ring-buffer.
   jack-stdout xmms_0:out_1 xmms_0:out_2 \\
   | mono  ~/Desktop/Downloads/JustePort.exe - 10.0.1.6 0
 
-  jack-stdout -b 24 -e unsigned -B system:capture_1 system:capture_2 \\
-  | sox -t raw -r 48k -e unsigned -b 24 -B -c 2 - /tmp/recording.wav
+  jack-stdout \-b 24 \-e unsigned \-B system:capture_1 system:capture_2 \\
+  | sox \-t raw \-r 48k \-e unsigned \-b 24 \-B \-c 2 \- /tmp/recording.wav
 
   jack-stdout system:capture_1 system:capture_2 \\
-  | oggenc -r -R 48000 -B 16 -C 2 - \\
+  | oggenc \-r \-R 48000 \-B 16 \-C 2 \- \\
   > /tmp/recording.ogg
 
   jack-stdout system:capture_1 \\
-  | oggenc -r -R 48000 -B 16 -C 1 - \\
-  | oggfwd -p -n "my live stream" localhost 5900 hackme live.ogg
+  | oggenc \-r \-R 48000 \-B 16 \-C 1 \- \\
+  | oggfwd \-p \-n "my live stream" localhost 5900 hackme live.ogg
 .fi
 .SH AUTHOR
 Robin Gareus <robin@gareus.org>.

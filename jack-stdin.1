@@ -60,7 +60,7 @@ Print a brief usage information
 \fB-p\fR, \fB--prebuffer\fR \fIPERCENT\fR
 .RS
 Pre-fill the buffer before starting audio output to JACK (default 50.0%).
-NOTE: disable pre-buffering (-p 0) or use a small buffer size to play back
+NOTE: disable pre-buffering (\-p 0) or use a small buffer size to play back
 very short samples.
 .RE
 
@@ -95,8 +95,8 @@ Note: the buffersize must be larger than JACK's period size.
 .SH EXAMPLES
 .nf
   jack-stdout vlc_31994:out_1 vlc_31994:out_2 \\
-	| sox -t raw -r 48k -e signed -b 16 -c 2 - \\
-	      -t raw -r 48k -e signed -b 16 -c 2 - \\
+	| sox \-t raw \-r 48k \-e signed \-b 16 \-c 2 \- \\
+	      \-t raw \-r 48k \-e signed \-b 16 \-c 2 \- \\
 	   tremolo 5 100 \\
 	| ./jack-stdin system:playback_1 system:playback_2
 
