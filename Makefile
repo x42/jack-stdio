@@ -1,5 +1,5 @@
 # override e.g. `make install PREFIX=/usr`
-PREFIX = /usr/local
+PREFIX ?= /usr/local
 
 CFLAGS=-Wall `pkg-config --cflags jack` -O3
 LIBS=`pkg-config --libs jack` -lpthread -lm
