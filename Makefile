@@ -1,7 +1,8 @@
 # override e.g. `make install PREFIX=/usr`
 PREFIX ?= /usr/local
 
-CFLAGS=-Wall `pkg-config --cflags jack` -O3
+CFLAGS ?= -O3
+CFLAGS += -Wall `pkg-config --cflags jack`
 LIBS=`pkg-config --libs jack` -lpthread -lm
 #compat w/ NetBSD and GNU Make
 LDADD=${LIBS}
