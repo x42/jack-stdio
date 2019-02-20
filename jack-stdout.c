@@ -322,6 +322,7 @@ static void usage (const char *name, int status) {
 	  " -d, --duration {sec}     terminate after given time, <1: unlimited (default:0)\n"
 	  " -e, --encoding {format}  set output format: (default: signed)\n"
 		"                          signed-integer, unsigned-integer, float\n"
+	  " -n, --name {clientname}  set client name in JACK instead of jstdout\n"
 	  " -L, --little-endian      write little-endian integers or\n"
 		"                          native-byte-order floats (default)\n"
 	  " -B, --big-endian         write big-endian integers or swapped-order floats\n"
@@ -335,6 +336,7 @@ int main (int argc, char **argv) {
 	jack_thread_info_t thread_info;
 	jack_status_t jstat;
 	int c;
+	char *client_name = "jstdout";
 
 	memset(&thread_info, 0, sizeof(thread_info));
 	thread_info.rb_size = 16384 * 4;
@@ -342,12 +344,13 @@ int main (int argc, char **argv) {
 	thread_info.duration = 0;
 	thread_info.format = 0;
 
-	const char *optstring = "d:e:b:S:BLhq";
+	const char *optstring = "d:e:b:S:n:BLhq";
 	struct option long_options[] = {
 		{ "help", 0, 0, 'h' },
 		{ "quiet", 0, 0, 'q' },
 		{ "duration", 1, 0, 'd' },
 		{ "encoding", 1, 0, 'e' },
+		{ "name", 1, 0, 'n' },
 		{ "little-endian", 0, 0, 'L' },
 		{ "big-endian", 0, 0, 'B' },
 		{ "bitdepth", 1, 0, 'b' },
@@ -362,6 +365,9 @@ int main (int argc, char **argv) {
 				break;
 			case 'q':
 				want_quiet = 1;
+				break;
+			case 'n':
+				client_name = optarg;
 				break;
 			case 'd':
 				thread_info.duration = atoi(optarg);
@@ -420,7 +426,7 @@ int main (int argc, char **argv) {
 	}
 
 	/* set up JACK client */
-	if ((client = jack_client_open("jstdout", JackNoStartServer, &jstat)) == 0) {
+	if ((client = jack_client_open(client_name, JackNoStartServer, &jstat)) == 0) {
 		fprintf(stderr, "Can not connect to JACK.\n");
 		exit(1);
 	}
