@@ -325,6 +325,7 @@ static void usage (const char *name, int status) {
 	  " -e, --encoding {format}  set output format: (default: signed)\n"
 		"                          signed-integer, unsigned-integer, float\n"
 	  " -f, --file {filename}    read data from file instead of stdin\n"
+	  " -n, --name {clientname}  set client name in JACK instead of jstdin\n"
 	  " -L, --little-endian      write little-endian integers or\n"
 		"                          native-byte-order floats (default)\n"
 	  " -B, --big-endian         write big-endian integers or swapped-order floats\n"
@@ -340,6 +341,7 @@ int main (int argc, char **argv) {
 	jack_status_t jstat;
 	int c;
 	char *infn = NULL;
+	char *client_name = "jstdin";
 
 	memset(&thread_info, 0, sizeof(thread_info));
 	thread_info.rb_size = 16384 * 4;
@@ -349,13 +351,14 @@ int main (int argc, char **argv) {
 	thread_info.prebuffer = 50.0;
 	thread_info.readfd = fileno(stdin);
 
-	const char *optstring = "d:e:b:S:f:p:BLhq";
+	const char *optstring = "d:e:b:S:f:p:n:BLhq";
 	struct option long_options[] = {
 		{ "help", 0, 0, 'h' },
 		{ "quiet", 0, 0, 'q' },
 		{ "duration", 1, 0, 'd' },
 		{ "encoding", 1, 0, 'e' },
 		{ "file", 1, 0, 'f' },
+		{ "name", 1, 0, 'n' },
 		{ "prebuffer", 1, 0, 'p' },
 		{ "little-endian", 0, 0, 'L' },
 		{ "big-endian", 0, 0, 'B' },
@@ -375,6 +378,9 @@ int main (int argc, char **argv) {
 			case 'f':
 				free(infn);
 				infn=strdup(optarg);
+				break;
+			case 'n':
+				client_name = optarg;
 				break;
 			case 'd':
 				thread_info.duration = atoi(optarg);
@@ -446,7 +452,7 @@ int main (int argc, char **argv) {
 	}
 
 	/* set up JACK client */
-	if ((client = jack_client_open("jstdin", JackNoStartServer, &jstat)) == 0) {
+	if ((client = jack_client_open(client_name, JackNoStartServer, &jstat)) == 0) {
 		fprintf(stderr, "Can not connect to JACK.\n");
 		exit(1);
 	}
