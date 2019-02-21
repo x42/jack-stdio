@@ -1,5 +1,5 @@
 .\" jack-stdin.1 written by Robin Gareus <robin@gareus.org>
-.TH JACK-STDIN 1 "30 March 2011"
+.TH JACK-STDIN 1 "21 February 2019"
 .SH NAME
 jack-stdin \- write JACK audio data to stdin
 .SH SYNOPSIS
@@ -42,6 +42,13 @@ which reads until end-of-file.
 .RS
 Set the input format of the data: signed-integer, unsigned-integer, floating-point
 (default: signed)
+.RE
+
+.TP
+\fB-n\fR, \fB--name\fR \fICLIENTNAME\fR
+.RS
+Set JACK client name
+(default: jstdin)
 .RE
 
 .TP

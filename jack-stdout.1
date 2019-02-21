@@ -1,5 +1,5 @@
 .\" jack-stdout.1 written by Robin Gareus <robin@gareus.org>
-.TH JACK-STDOUT 1 "29 March 2011"
+.TH JACK-STDOUT 1 "21 February 2019"
 .SH NAME
 jack-stdout \- write JACK audio data to stdout
 .SH SYNOPSIS
@@ -40,6 +40,13 @@ A value less than 1 means to run indefinitely. The default is 0.
 .RS
 Set the output format of the data: signed-integer, unsigned-integer, floating-point
 (default: signed)
+.RE
+
+.TP
+\fB-n\fR, \fB--name\fR \fICLIENTNAME\fR
+.RS
+Set JACK client name
+(default: jstdout)
 .RE
 
 .TP

@@ -326,6 +326,8 @@ static void usage (const char *name, int status) {
 		"                          signed-integer, unsigned-integer, float\n"
 	  " -f, --file {filename}    read data from file instead of stdin\n"
 	  " -n, --name {clientname}  set client name in JACK instead of jstdin\n"
+	  " -p, --prebuffer {pct}    Pre-fill the buffer before starting audio output\n"
+		"                          to JACK (default 50.0%%).\n"
 	  " -L, --little-endian      write little-endian integers or\n"
 		"                          native-byte-order floats (default)\n"
 	  " -B, --big-endian         write big-endian integers or swapped-order floats\n"
