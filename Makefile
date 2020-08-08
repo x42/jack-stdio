@@ -2,7 +2,7 @@
 PREFIX ?= /usr/local
 
 CFLAGS ?= -O3
-CFLAGS += -Wall `pkg-config --cflags jack`
+override CFLAGS += -Wall `pkg-config --cflags jack`
 LIBS=`pkg-config --libs jack` -lpthread -lm
 #compat w/ NetBSD and GNU Make
 LDADD=${LIBS}
